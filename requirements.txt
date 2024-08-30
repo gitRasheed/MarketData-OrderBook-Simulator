@@ -4,3 +4,4 @@ plotly
 dash
 pandas
 numpy
+sortedcontainers
