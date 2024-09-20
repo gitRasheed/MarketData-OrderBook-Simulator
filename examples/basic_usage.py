@@ -4,6 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.orderbook import Orderbook
 from src.order import Order
+from src.ticker import Ticker
 import time
 
 def visualize_order_book(snapshot, depth=5):
@@ -26,61 +27,43 @@ def visualize_order_book(snapshot, depth=5):
     print("-------------------------")
 
 def main():
-    orderbook = Orderbook()
-    orderbook.start_processing()
+    spy_ticker = Ticker("SPY", "0.01")
+    qqq_ticker = Ticker("QQQ", "0.01")
 
-    # Add initial limit orders
-    orderbook.order_queue.put(Order(1, "limit", "buy", "100.50", "10"))
-    orderbook.order_queue.put(Order(2, "limit", "buy", "100.40", "5"))
-    orderbook.order_queue.put(Order(3, "limit", "sell", "100.60", "7"))
-    orderbook.order_queue.put(Order(4, "limit", "sell", "100.70", "3"))
+    spy_orderbook = Orderbook(spy_ticker)
+    qqq_orderbook = Orderbook(qqq_ticker)
 
-    time.sleep(1)  # Allow time for order processing
+    spy_orderbook.start_processing()
+    qqq_orderbook.start_processing()
 
-    print("Initial Order Book:")
-    visualize_order_book(orderbook.get_order_book_snapshot(5))
+    # Add some limit orders for SPY
+    spy_orderbook.order_queue.put(Order(1, "limit", "buy", "300.60", "10", "SPY"))
+    spy_orderbook.order_queue.put(Order(2, "limit", "buy", "300.40", "5", "SPY"))
+    spy_orderbook.order_queue.put(Order(3, "limit", "sell", "301.00", "7", "SPY"))
+    spy_orderbook.order_queue.put(Order(4, "limit", "sell", "301.25", "3", "SPY"))
 
-    # Process a market order
-    market_order = Order(5, "market", "buy", None, "6")
-    orderbook.order_queue.put(market_order)
+    # Add some limit orders for QQQ
+    qqq_orderbook.order_queue.put(Order(1, "limit", "buy", "200.30", "10", "QQQ"))
+    qqq_orderbook.order_queue.put(Order(2, "limit", "buy", "200.20", "5", "QQQ"))
+    qqq_orderbook.order_queue.put(Order(3, "limit", "sell", "200.50", "7", "QQQ"))
+    qqq_orderbook.order_queue.put(Order(4, "limit", "sell", "200.60", "3", "QQQ"))
 
-    time.sleep(1)  # Allow time for order processing
-
-    print("\nAfter Market Buy Order:")
-    visualize_order_book(orderbook.get_order_book_snapshot(5))
-
-    # Add more limit orders
-    orderbook.order_queue.put(Order(6, "limit", "buy", "100.55", "8"))
-    orderbook.order_queue.put(Order(7, "limit", "sell", "100.65", "4"))
-
-    time.sleep(1)  # Allow time for order processing
-
-    print("\nAfter Adding More Limit Orders:")
-    visualize_order_book(orderbook.get_order_book_snapshot(5))
-
-    # Cancel an order
-    orderbook.cancel_order(2)  # Cancel the buy order at 100.40
+    # Try to add an invalid order
+    try:
+        spy_orderbook.order_queue.put(Order(5, "limit", "buy", "300.613", "5", "SPY"))
+    except InvalidOrderException as e:
+        print(f"Invalid order: {e}")
 
     time.sleep(1)  # Allow time for order processing
 
-    print("\nAfter Cancelling Buy Order at 100.40:")
-    visualize_order_book(orderbook.get_order_book_snapshot(5))
+    print("SPY Order Book:")
+    visualize_order_book(spy_orderbook.get_order_book_snapshot(5))
 
-    # Modify an order
-    orderbook.modify_order(1, "100.52", "12")  # Modify the buy order at 100.50
+    print("\nQQQ Order Book:")
+    visualize_order_book(qqq_orderbook.get_order_book_snapshot(5))
 
-    time.sleep(1)  # Allow time for order processing
-
-    print("\nAfter Modifying Buy Order:")
-    visualize_order_book(orderbook.get_order_book_snapshot(5))
-
-    # Calculate and display bid-ask spread
-    best_bid, best_ask = orderbook.get_best_bid_ask()
-    spread = best_ask - best_bid
-    print(f"\nBest Bid: {best_bid}, Best Ask: {best_ask}")
-    print(f"Bid-Ask Spread: {spread}")
-
-    orderbook.stop_processing()
+    spy_orderbook.stop_processing()
+    qqq_orderbook.stop_processing()
 
 if __name__ == "__main__":
     main()
