@@ -1,8 +1,10 @@
 import pytest
 from decimal import Decimal
+import threading
+import time
 from src.orderbook import Orderbook
 from src.order import Order
-from src.exceptions import InsufficientLiquidityException
+from src.exceptions import InsufficientLiquidityException, OrderNotFoundException
 
 @pytest.fixture
 def orderbook():
@@ -54,3 +56,44 @@ def test_get_order_book_snapshot(orderbook):
         "bids": [(Decimal("100.50"), Decimal("10")), (Decimal("100.40"), Decimal("5"))],
         "asks": [(Decimal("100.60"), Decimal("7")), (Decimal("100.70"), Decimal("3"))]
     }
+
+def test_modify_order(orderbook):
+    order = Order(1, "limit", "buy", "100.50", "10")
+    order_id = orderbook.add_order(order)
+    
+    orderbook.modify_order(order_id, "101.00", "15")
+    
+    modified_order = orderbook.orders[order_id]
+    assert modified_order.price == Decimal("101.00")
+    assert modified_order.quantity == Decimal("15")
+    assert Decimal("100.50") not in orderbook.bids
+    assert orderbook.bids[Decimal("101.00")][0] == modified_order
+
+def test_modify_nonexistent_order(orderbook):
+    with pytest.raises(OrderNotFoundException):
+        orderbook.modify_order(999, "101.00", "15")
+
+def test_concurrent_order_processing(orderbook):
+    orderbook.start_processing()
+
+    def add_orders(side, price_range, quantity):
+        for i in range(100):
+            price = Decimal(str(price_range[0] + i * (price_range[1] - price_range[0]) / 100))
+            order = Order(1000 + i, "limit", side, price, quantity)
+            orderbook.order_queue.put(order)
+
+    t1 = threading.Thread(target=add_orders, args=("buy", (100, 105), "10"))
+    t2 = threading.Thread(target=add_orders, args=("sell", (105, 110), "10"))
+
+    t1.start()
+    t2.start()
+
+    t1.join()
+    t2.join()
+
+    time.sleep(1)  # Allow time for order processing
+
+    assert len(orderbook.bids) == 100
+    assert len(orderbook.asks) == 100
+
+    orderbook.stop_processing()

@@ -2,17 +2,39 @@ from sortedcontainers import SortedDict
 from collections import deque
 from decimal import Decimal
 import threading
+import queue
 from .order import Order
 from .level_data import LevelData
 from .exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException
 
 class Orderbook:
     def __init__(self):
-        self.bids = SortedDict(lambda x: -x)
+        self.bids = SortedDict()
         self.asks = SortedDict()
         self.orders = {}
         self.level_data = {}
         self.lock = threading.Lock()
+        self.order_queue = queue.Queue()
+        self.processing_thread = None
+        self.stop_processing_flag = False
+
+    def start_processing(self):
+        self.stop_processing_flag = False
+        self.processing_thread = threading.Thread(target=self._process_orders)
+        self.processing_thread.start()
+
+    def stop_processing(self):
+        self.stop_processing_flag = True
+        if self.processing_thread:
+            self.processing_thread.join()
+
+    def _process_orders(self):
+        while not self.stop_processing_flag:
+            try:
+                order = self.order_queue.get(timeout=1)
+                self.add_order(order)
+            except queue.Empty:
+                continue
 
     def add_order(self, order):
         with self.lock:
@@ -45,6 +67,38 @@ class Orderbook:
                 del book[order.price]
                 del self.level_data[order.price]
             del self.orders[order_id]
+
+    def modify_order(self, order_id, new_price, new_quantity):
+        with self.lock:
+            if order_id not in self.orders:
+                raise OrderNotFoundException("Order not found")
+            
+            order = self.orders[order_id]
+            old_price = order.price
+            old_quantity = order.quantity
+            
+            book = self.bids if order.side == "buy" else self.asks
+            book[old_price].remove(order)
+            self.level_data[old_price].remove_order(order)
+            
+            if not book[old_price]:
+                del book[old_price]
+                del self.level_data[old_price]
+            
+            new_price = Decimal(str(new_price))
+            new_quantity = Decimal(str(new_quantity))
+            
+            order.price = new_price
+            order.quantity = new_quantity
+            
+            if new_price not in book:
+                book[new_price] = deque()
+                self.level_data[new_price] = LevelData()
+            
+            book[new_price].append(order)
+            self.level_data[new_price].add_order(order)
+            
+            return order_id
 
     def get_best_bid_ask(self):
         best_bid = max(self.bids.keys()) if self.bids else None
@@ -86,6 +140,6 @@ class Orderbook:
 
     def get_order_book_snapshot(self, levels):
         with self.lock:
-            bids = [(price, self.level_data[price].quantity) for price in self.bids.keys()[:levels]]
-            asks = [(price, self.level_data[price].quantity) for price in self.asks.keys()[:levels]]
+            bids = [(price, self.level_data[price].quantity) for price in list(reversed(self.bids.keys()))[:levels]]
+            asks = [(price, self.level_data[price].quantity) for price in list(self.asks.keys())[:levels]]
             return {"bids": bids, "asks": asks}
