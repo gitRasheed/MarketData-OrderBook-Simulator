@@ -6,7 +6,7 @@ class Order:
         self.id = id
         self.type = type
         self.side = side
-        self.price = Decimal(str(price))
+        self.price = Decimal(str(price)) if price is not None else None
         self.quantity = Decimal(str(quantity))
         self.timestamp = time.time()
         self.filled_quantity = Decimal('0')
