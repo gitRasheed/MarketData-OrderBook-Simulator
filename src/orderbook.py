@@ -8,7 +8,8 @@ from .level_data import LevelData
 from .exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException
 
 class Orderbook:
-    def __init__(self):
+    def __init__(self, ticker):
+        self.ticker = ticker
         self.bids = SortedDict()
         self.asks = SortedDict()
         self.orders = {}
@@ -46,6 +47,9 @@ class Orderbook:
                 raise InvalidOrderException("Invalid order type")
 
     def add_limit_order(self, order):
+        if not self.ticker.is_valid_price(order.price):
+            raise InvalidOrderException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
+        
         book = self.bids if order.side == "buy" else self.asks
         if order.price not in book:
             book[order.price] = deque()
@@ -72,6 +76,9 @@ class Orderbook:
         with self.lock:
             if order_id not in self.orders:
                 raise OrderNotFoundException("Order not found")
+            
+            if not self.ticker.is_valid_price(new_price):
+                raise InvalidOrderException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
             
             order = self.orders[order_id]
             old_price = order.price

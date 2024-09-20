@@ -6,3 +6,6 @@ class InsufficientLiquidityException(Exception):
 
 class OrderNotFoundException(Exception):
     pass
+
+class InvalidTickSizeException(Exception):
+    pass
