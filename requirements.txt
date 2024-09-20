@@ -1,5 +1,3 @@
-grpcio
-grpcio-tools
 plotly
 dash
 pandas
