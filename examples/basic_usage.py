@@ -6,6 +6,8 @@ from src.orderbook import Orderbook
 from src.order import Order
 from src.ticker import Ticker
 import time
+from src.exceptions import InvalidOrderException, InvalidTickSizeException
+
 
 def visualize_order_book(snapshot, depth=5):
     bids = snapshot['bids'][:depth]
@@ -51,8 +53,8 @@ def main():
     # Try to add an invalid order
     try:
         spy_orderbook.order_queue.put(Order(5, "limit", "buy", "300.613", "5", "SPY"))
-    except InvalidOrderException as e:
-        print(f"Invalid order: {e}")
+    except InvalidTickSizeException as e:
+        print(f"Invalid tick size: {e}")
 
     time.sleep(1)  # Allow time for order processing
 

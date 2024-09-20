@@ -5,7 +5,7 @@ import time
 from src.orderbook import Orderbook
 from src.order import Order
 from src.ticker import Ticker
-from src.exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException
+from src.exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException, InvalidTickSizeException
 
 @pytest.fixture
 def orderbook():
@@ -21,7 +21,7 @@ def test_add_limit_order(orderbook):
 
 def test_add_invalid_limit_order(orderbook):
     order = Order(1, "limit", "buy", "100.513", "10", "SPY")
-    with pytest.raises(InvalidOrderException):
+    with pytest.raises(InvalidTickSizeException):
         orderbook.add_order(order)
 
 def test_cancel_order(orderbook):
@@ -79,7 +79,7 @@ def test_modify_order(orderbook):
 def test_modify_order_invalid_price(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
     order_id = orderbook.add_order(order)
-    with pytest.raises(InvalidOrderException):
+    with pytest.raises(InvalidTickSizeException):
         orderbook.modify_order(order_id, "100.513", "15")
 
 def test_modify_nonexistent_order(orderbook):

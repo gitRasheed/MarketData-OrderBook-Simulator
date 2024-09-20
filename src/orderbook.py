@@ -5,7 +5,7 @@ import threading
 import queue
 from .order import Order
 from .level_data import LevelData
-from .exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException
+from .exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException, InvalidTickSizeException
 
 class Orderbook:
     def __init__(self, ticker):
@@ -48,8 +48,8 @@ class Orderbook:
 
     def add_limit_order(self, order):
         if not self.ticker.is_valid_price(order.price):
-            raise InvalidOrderException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
-        
+            raise InvalidTickSizeException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
+
         book = self.bids if order.side == "buy" else self.asks
         if order.price not in book:
             book[order.price] = deque()
@@ -78,7 +78,7 @@ class Orderbook:
                 raise OrderNotFoundException("Order not found")
             
             if not self.ticker.is_valid_price(new_price):
-                raise InvalidOrderException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
+                raise InvalidTickSizeException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
             
             order = self.orders[order_id]
             old_price = order.price
