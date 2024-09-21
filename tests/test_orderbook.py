@@ -5,7 +5,7 @@ import time
 from src.orderbook import Orderbook
 from src.order import Order
 from src.ticker import Ticker
-from src.exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException, InvalidTickSizeException
+from src.exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException
 
 @pytest.fixture
 def orderbook():
@@ -24,12 +24,26 @@ def test_add_invalid_limit_order(orderbook):
     with pytest.raises(InvalidTickSizeException):
         orderbook.add_order(order)
 
+def test_add_invalid_quantity_order(orderbook):
+    order = Order(1, "limit", "buy", "100.50", "0", "SPY")
+    with pytest.raises(InvalidQuantityException):
+        orderbook.add_order(order)
+
+def test_add_invalid_order_type(orderbook):
+    order = Order(1, "invalid_type", "buy", "100.50", "10", "SPY")
+    with pytest.raises(InvalidOrderException):
+        orderbook.add_order(order)
+
 def test_cancel_order(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
     order_id = orderbook.add_order(order)
     orderbook.cancel_order(order_id)
     assert order_id not in orderbook.orders
     assert Decimal("100.50") not in orderbook.bids
+
+def test_cancel_nonexistent_order(orderbook):
+    with pytest.raises(OrderNotFoundException):
+        orderbook.cancel_order(999)
 
 def test_get_best_bid_ask(orderbook):
     orderbook.add_order(Order(1, "limit", "buy", "100.50", "10", "SPY"))
@@ -81,6 +95,12 @@ def test_modify_order_invalid_price(orderbook):
     order_id = orderbook.add_order(order)
     with pytest.raises(InvalidTickSizeException):
         orderbook.modify_order(order_id, "100.513", "15")
+
+def test_modify_order_invalid_quantity(orderbook):
+    order = Order(1, "limit", "buy", "100.50", "10", "SPY")
+    order_id = orderbook.add_order(order)
+    with pytest.raises(InvalidQuantityException):
+        orderbook.modify_order(order_id, "100.52", "0")
 
 def test_modify_nonexistent_order(orderbook):
     with pytest.raises(OrderNotFoundException):

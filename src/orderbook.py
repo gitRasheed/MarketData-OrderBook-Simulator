@@ -5,7 +5,7 @@ import threading
 import queue
 from .order import Order
 from .level_data import LevelData
-from .exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException, InvalidTickSizeException
+from .exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException
 
 class Orderbook:
     def __init__(self, ticker):
@@ -39,6 +39,8 @@ class Orderbook:
 
     def add_order(self, order):
         with self.lock:
+            if order.quantity <= 0:
+                raise InvalidQuantityException("Order quantity must be positive")
             if order.type == "market":
                 return self.process_market_order(order)
             elif order.type == "limit":
@@ -76,35 +78,38 @@ class Orderbook:
         with self.lock:
             if order_id not in self.orders:
                 raise OrderNotFoundException("Order not found")
-            
+
             if not self.ticker.is_valid_price(new_price):
                 raise InvalidTickSizeException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
-            
+
+            new_quantity = Decimal(str(new_quantity))
+            if new_quantity <= 0:
+                raise InvalidQuantityException("Order quantity must be positive")
+
             order = self.orders[order_id]
             old_price = order.price
             old_quantity = order.quantity
-            
+
             book = self.bids if order.side == "buy" else self.asks
             book[old_price].remove(order)
             self.level_data[old_price].remove_order(order)
-            
+
             if not book[old_price]:
                 del book[old_price]
                 del self.level_data[old_price]
-            
+
             new_price = Decimal(str(new_price))
-            new_quantity = Decimal(str(new_quantity))
-            
+
             order.price = new_price
             order.quantity = new_quantity
-            
+
             if new_price not in book:
                 book[new_price] = deque()
                 self.level_data[new_price] = LevelData()
-            
+
             book[new_price].append(order)
             self.level_data[new_price].add_order(order)
-            
+
             return order_id
 
     def get_best_bid_ask(self):

@@ -9,3 +9,6 @@ class OrderNotFoundException(Exception):
 
 class InvalidTickSizeException(Exception):
     pass
+
+class InvalidQuantityException(Exception):
+    pass
