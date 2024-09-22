@@ -11,6 +11,9 @@ def test_order_creation():
     assert order.symbol == "SPY"
     assert order.filled_quantity == Decimal("0")
     assert order.timestamp > 0
+    assert order.next_order is None
+    assert order.prev_order is None
+    assert order.parent_level is None
 
 def test_update_quantity():
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")

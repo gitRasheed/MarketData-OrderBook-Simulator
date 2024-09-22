@@ -11,6 +11,9 @@ class Order:
         self.symbol = symbol
         self.timestamp = time.time()
         self.filled_quantity = Decimal('0')
+        self.next_order = None
+        self.prev_order = None
+        self.parent_level = None
 
     def update_quantity(self, new_quantity):
         self.quantity = Decimal(str(new_quantity))

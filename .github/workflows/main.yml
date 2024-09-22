@@ -1,19 +1,19 @@
-name: Run Tests and Push
+name: Test, Benchmark, and Push
 
 on:
   push:
-    branches-ignore:
-      - main
+    branches:
+      - '*'
+  pull_request:
+    branches: [ main ]
+
 jobs:
-  test-and-push:
+  test-benchmark-and-push:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
-
+    - uses: actions/checkout@v4
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11.8'
 
@@ -25,9 +25,77 @@ jobs:
     - name: Run pytest
       run: pytest
 
+    - name: Run single orderbook benchmark
+      run: python benchmarks/single_orderbook_performance_benchmark.py
+
+    - name: Run multiple orderbook benchmark
+      run: python benchmarks/multiple_orderbook_performance_benchmark.py
+
     - name: Push changes
-      if: success()
+      if: github.ref != 'refs/heads/main' && success()
       run: |
         git config --global user.name 'github-actions[bot]'
         git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git push origin HEAD:${GITHUB_REF}
+        git add benchmarks/previous_benchmark_results
+        git commit -m "Add benchmark results [skip ci]" || echo "No changes to commit"
+        git push "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:${GITHUB_REF}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: benchmarks/previous_benchmark_results
+
+    - name: Comment PR
+      uses: actions/github-script@v6
+      if: github.event_name == 'pull_request'
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+
+          function findMostRecentFile(directory) {
+            const files = fs.readdirSync(directory);
+            return files.reduce((latest, file) => {
+              const filePath = path.join(directory, file);
+              const stats = fs.statSync(filePath);
+              if (stats.isFile() && (!latest || stats.mtime > latest.mtime)) {
+                return { file: filePath, mtime: stats.mtime };
+              }
+              return latest;
+            }, null);
+          }
+
+          const singleResultsFile = findMostRecentFile('benchmarks/previous_benchmark_results/single_orderbook');
+          const multipleResultsFile = findMostRecentFile('benchmarks/previous_benchmark_results/multiple_orderbook');
+
+          const singleResults = JSON.parse(fs.readFileSync(singleResultsFile.file, 'utf8'));
+          const multipleResults = JSON.parse(fs.readFileSync(multipleResultsFile.file, 'utf8'));
+          
+          const formatResults = (results) => {
+            return Object.entries(results.latencies).map(([op, stats]) => {
+              const mean = stats.reduce((a, b) => a + b, 0) / stats.length;
+              return `- ${op}: ${mean.toFixed(2)} μs (mean)`;
+            }).join('\n');
+          };
+          
+          const body = `## Benchmark Results (commit: ${context.sha})
+
+          ### Single Orderbook Performance
+          ${formatResults(singleResults)}
+
+          ### Multiple Orderbook Performance
+          ${formatResults(multipleResults)}
+
+          [Full benchmark results](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });

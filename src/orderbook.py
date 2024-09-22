@@ -1,5 +1,4 @@
-from sortedcontainers import SortedDict
-from collections import deque
+from bintrees import RBTree
 from decimal import Decimal
 import threading
 import queue
@@ -12,10 +11,9 @@ from .exceptions import InvalidOrderException, InsufficientLiquidityException, O
 class Orderbook:
     def __init__(self, ticker: Ticker):
         self.ticker: Ticker = ticker
-        self.bids: SortedDict = SortedDict()
-        self.asks: SortedDict = SortedDict()
+        self.bids: RBTree = RBTree()
+        self.asks: RBTree = RBTree()
         self.orders: Dict[int, Order] = {}
-        self.level_data: Dict[Decimal, LevelData] = {}
         self.lock: threading.Lock = threading.Lock()
         self.order_queue: queue.Queue = queue.Queue()
         self.processing_thread: Optional[threading.Thread] = None
@@ -56,10 +54,8 @@ class Orderbook:
 
         book = self.bids if order.side == "buy" else self.asks
         if order.price not in book:
-            book[order.price] = deque()
-            self.level_data[order.price] = LevelData()
-        book[order.price].append(order)
-        self.level_data[order.price].add_order(order)
+            book[order.price] = LevelData(order.price)
+        book[order.price].add_order(order)
         self.orders[order.id] = order
         return order.id
 
@@ -69,11 +65,10 @@ class Orderbook:
                 raise OrderNotFoundException("Order not found")
             order = self.orders[order_id]
             book = self.bids if order.side == "buy" else self.asks
-            book[order.price].remove(order)
-            self.level_data[order.price].remove_order(order)
-            if not book[order.price]:
+            level_data = book[order.price]
+            level_data.remove_order(order)
+            if level_data.count == 0:
                 del book[order.price]
-                del self.level_data[order.price]
             del self.orders[order_id]
 
     def modify_order(self, order_id: int, new_price: Decimal, new_quantity: Decimal) -> int:
@@ -93,30 +88,26 @@ class Orderbook:
             old_quantity = order.quantity
 
             book = self.bids if order.side == "buy" else self.asks
-            book[old_price].remove(order)
-            self.level_data[old_price].remove_order(order)
+            level_data = book[old_price]
+            level_data.remove_order(order)
 
-            if not book[old_price]:
+            if level_data.count == 0:
                 del book[old_price]
-                del self.level_data[old_price]
 
             new_price = Decimal(str(new_price))
-
             order.price = new_price
             order.quantity = new_quantity
 
             if new_price not in book:
-                book[new_price] = deque()
-                self.level_data[new_price] = LevelData()
-
-            book[new_price].append(order)
-            self.level_data[new_price].add_order(order)
+                book[new_price] = LevelData(new_price)
+            book[new_price].add_order(order)
 
             return order_id
 
-    def get_best_bid_ask(self) -> Tuple[Optional[Decimal], Optional[Decimal]]:
-        best_bid = max(self.bids.keys()) if self.bids else None
-        best_ask = min(self.asks.keys()) if self.asks else None
+    @property
+    def best_bid_ask(self) -> Tuple[Optional[Decimal], Optional[Decimal]]:
+        best_bid = self.bids.max_key() if self.bids else None
+        best_ask = self.asks.min_key() if self.asks else None
         return best_bid, best_ask
 
     def process_market_order(self, order: Order) -> List[Tuple[int, Decimal, Decimal]]:
@@ -125,27 +116,28 @@ class Orderbook:
         filled_orders: List[Tuple[int, Decimal, Decimal]] = []
 
         while remaining_quantity > 0 and opposing_book:
-            best_price = min(opposing_book.keys()) if order.side == "buy" else max(opposing_book.keys())
-            level_orders = opposing_book[best_price]
-            level_data = self.level_data[best_price]
+            best_price = opposing_book.min_key() if order.side == "buy" else opposing_book.max_key()
+            level_data = opposing_book[best_price]
+            current_order = level_data.head_order
 
-            while level_orders and remaining_quantity > 0:
-                matched_order = level_orders[0]
-                filled_quantity = min(remaining_quantity, matched_order.quantity)
-                matched_order.quantity -= filled_quantity
+            while current_order and remaining_quantity > 0:
+                filled_quantity = min(remaining_quantity, current_order.quantity)
+                current_order.quantity -= filled_quantity
                 remaining_quantity -= filled_quantity
-                level_data.update_quantity(matched_order.quantity + filled_quantity, matched_order.quantity)
+                level_data.update_quantity(current_order.quantity + filled_quantity, current_order.quantity)
 
-                filled_orders.append((matched_order.id, filled_quantity, best_price))
+                filled_orders.append((current_order.id, filled_quantity, best_price))
 
-                if matched_order.quantity == 0:
-                    level_orders.popleft()
-                    level_data.remove_order(matched_order)
-                    del self.orders[matched_order.id]
+                if current_order.quantity == 0:
+                    next_order = current_order.next_order
+                    level_data.remove_order(current_order)
+                    del self.orders[current_order.id]
+                    current_order = next_order
+                else:
+                    current_order = current_order.next_order
 
-            if not level_orders:
+            if level_data.count == 0:
                 del opposing_book[best_price]
-                del self.level_data[best_price]
 
         if remaining_quantity > 0:
             raise InsufficientLiquidityException("Not enough liquidity to fill market order")
@@ -154,6 +146,6 @@ class Orderbook:
 
     def get_order_book_snapshot(self, levels: int) -> Dict[str, List[Tuple[Decimal, Decimal]]]:
         with self.lock:
-            bids = [(price, self.level_data[price].quantity) for price in list(reversed(self.bids.keys()))[:levels]]
-            asks = [(price, self.level_data[price].quantity) for price in list(self.asks.keys())[:levels]]
+            bids = [(price, level_data.quantity) for price, level_data in self.bids.items(reverse=True)][:levels]
+            asks = [(price, level_data.quantity) for price, level_data in self.asks.items()][:levels]
             return {"bids": bids, "asks": asks}
