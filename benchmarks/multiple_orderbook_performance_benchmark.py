@@ -165,6 +165,24 @@ def generate_summary(all_latencies, throughputs):
 
         summary += "\n"
 
+    summary += "Overall Performance Summary\n"
+    summary += "-" * 80 + "\n"
+    summary += f"{'Operation':<25} {'Avg Time (s)':<15} {'Ops/sec':<12}\n"
+    summary += "-" * 80 + "\n"
+
+    # Calculate overall averages
+    overall_latencies = defaultdict(list)
+    overall_throughputs = defaultdict(list)
+    for size in all_latencies:
+        for op in all_latencies[size]:
+            overall_latencies[op].extend(all_latencies[size][op])
+            overall_throughputs[op].append(throughputs[size][op])
+
+    for op in overall_latencies:
+        avg_time = np.mean(overall_latencies[op])
+        avg_ops_per_sec = np.mean(overall_throughputs[op])
+        summary += f"{op[10:]:<25} {avg_time:<15.6f} {avg_ops_per_sec:<12.2f}\n"
+
     return summary
 
 def save_results(all_latencies, throughputs, benchmark_type):
