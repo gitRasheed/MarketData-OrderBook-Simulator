@@ -34,14 +34,6 @@ jobs:
     - name: Run multiple orderbook benchmark
       run: python benchmarks/multiple_orderbook_performance_benchmark.py
 
-    - name: Store benchmark results
-      run: |
-        mkdir -p benchmarks/previous_benchmark_results/single_orderbook
-        mkdir -p benchmarks/previous_benchmark_results/multiple_orderbook
-        mv benchmarks/single_orderbook_results.json benchmarks/previous_benchmark_results/single_orderbook/$(date +%Y%m%d_%H%M%S)_results.json
-        mv benchmarks/multiple_orderbook_results.json benchmarks/previous_benchmark_results/multiple_orderbook/$(date +%Y%m%d_%H%M%S)_results.json
-        mv benchmarks/*.png benchmarks/previous_benchmark_results/
-
     - name: Push changes
       if: github.ref != 'refs/heads/main' && success()
       run: |
@@ -66,13 +58,31 @@ jobs:
         github-token: ${{secrets.GITHUB_TOKEN}}
         script: |
           const fs = require('fs');
-          const singleResults = JSON.parse(fs.readFileSync('benchmarks/previous_benchmark_results/single_orderbook/$(date +%Y%m%d_%H%M%S)_results.json', 'utf8'));
-          const multipleResults = JSON.parse(fs.readFileSync('benchmarks/previous_benchmark_results/multiple_orderbook/$(date +%Y%m%d_%H%M%S)_results.json', 'utf8'));
+          const path = require('path');
+
+          function findMostRecentFile(directory) {
+            const files = fs.readdirSync(directory);
+            return files.reduce((latest, file) => {
+              const filePath = path.join(directory, file);
+              const stats = fs.statSync(filePath);
+              if (stats.isFile() && (!latest || stats.mtime > latest.mtime)) {
+                return { file: filePath, mtime: stats.mtime };
+              }
+              return latest;
+            }, null);
+          }
+
+          const singleResultsFile = findMostRecentFile('benchmarks/previous_benchmark_results/single_orderbook');
+          const multipleResultsFile = findMostRecentFile('benchmarks/previous_benchmark_results/multiple_orderbook');
+
+          const singleResults = JSON.parse(fs.readFileSync(singleResultsFile.file, 'utf8'));
+          const multipleResults = JSON.parse(fs.readFileSync(multipleResultsFile.file, 'utf8'));
           
           const formatResults = (results) => {
-            return Object.entries(results).map(([op, stats]) => 
-              `- ${op}: ${stats.mean.toFixed(2)} μs (mean)`
-            ).join('\n');
+            return Object.entries(results.latencies).map(([op, stats]) => {
+              const mean = stats.reduce((a, b) => a + b, 0) / stats.length;
+              return `- ${op}: ${mean.toFixed(2)} μs (mean)`;
+            }).join('\n');
           };
           
           const body = `## Benchmark Results (commit: ${context.sha})
