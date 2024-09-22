@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 from datetime import datetime
+from src.exceptions import InsufficientLiquidityException
 
 def setup_orderbook(num_initial_orders, price_levels, tick_size):
     ticker = Ticker("TEST", str(tick_size))
@@ -60,11 +61,13 @@ def benchmark_process_market_order(orderbook):
     order = Order(order_id, "market", side, None, quantity, "TEST")
     try:
         orderbook.add_order(order)
-    except:
+    except InsufficientLiquidityException:
         pass  # Ignore insufficient liquidity errors
+    except Exception as e:
+        print(f"Unexpected error processing market order: {e}")
 
 def benchmark_get_best_bid_ask(orderbook):
-    orderbook.get_best_bid_ask()
+    _ = orderbook.best_bid_ask
 
 def benchmark_get_order_book_snapshot(orderbook):
     orderbook.get_order_book_snapshot(10)
