@@ -151,7 +151,8 @@ def generate_summary(all_latencies, throughputs):
             percentile_99 = np.percentile(times_us, 99)
             ops_per_sec = throughputs[size][op]
 
-            summary += f"{op[10:]:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}\n"
+            operation_name = op.replace('benchmark_', '').replace('_', ' ').capitalize()
+            summary += f"{operation_name:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}\n"
 
         summary += "\n"
 
@@ -171,7 +172,8 @@ def generate_summary(all_latencies, throughputs):
     for op in overall_latencies:
         avg_time = np.mean(overall_latencies[op])
         avg_ops_per_sec = np.mean(overall_throughputs[op])
-        summary += f"{op[10:]:<25} {avg_time:<15.6f} {avg_ops_per_sec:<12.2f}\n"
+        operation_name = op.replace('benchmark_', '').replace('_', ' ').capitalize()
+        summary += f"{operation_name:<25} {avg_time:<15.6f} {avg_ops_per_sec:<12.2f}\n"
 
     return summary
 
