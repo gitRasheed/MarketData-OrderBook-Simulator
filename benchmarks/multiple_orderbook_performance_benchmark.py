@@ -15,15 +15,15 @@ from plotly.subplots import make_subplots
 import json
 from datetime import datetime
 
-def setup_orderbooks(num_orderbooks, num_initial_orders, price_levels):
+def setup_orderbooks(num_orderbooks, num_initial_orders, price_levels, tick_size):
     orderbooks = []
     for i in range(num_orderbooks):
-        ticker = Ticker(f"TEST{i}", "0.01")
+        ticker = Ticker(f"TEST{i}", str(tick_size))
         orderbook = Orderbook(ticker)
         
         for j in range(num_initial_orders):
             side = random.choice(["buy", "sell"])
-            price = Decimal(str(random.choice(price_levels)))
+            price = generate_random_price(price_levels, tick_size)
             quantity = Decimal(str(random.randint(1, 100)))
             order = Order(j, "limit", side, price, quantity, f"TEST{i}")
             orderbook.add_order(order)
@@ -32,14 +32,16 @@ def setup_orderbooks(num_orderbooks, num_initial_orders, price_levels):
     
     return orderbooks
 
-def generate_random_price(price_levels):
-    return random.choice(price_levels)
+def generate_random_price(price_levels, tick_size):
+    base_price = random.choice(price_levels)
+    tick_count = random.randint(-50, 50)
+    return (base_price + (Decimal(tick_count) * tick_size)).quantize(tick_size)
 
 def benchmark_add_limit_order(orderbooks, price_levels):
     orderbook = random.choice(orderbooks)
     order_id = random.randint(1, 10000000)
     side = random.choice(["buy", "sell"])
-    price = generate_random_price(price_levels)
+    price = generate_random_price(price_levels, orderbook.ticker.tick_size)
     quantity = Decimal(str(random.randint(1, 100)))
     order = Order(order_id, "limit", side, price, quantity, orderbook.ticker.symbol)
     orderbook.add_order(order)
@@ -54,7 +56,7 @@ def benchmark_modify_order(orderbooks, price_levels):
     orderbook = random.choice(orderbooks)
     if orderbook.orders:
         order_id = random.choice(list(orderbook.orders.keys()))
-        new_price = generate_random_price(price_levels)
+        new_price = generate_random_price(price_levels, orderbook.ticker.tick_size)
         new_quantity = Decimal(str(random.randint(1, 100)))
         orderbook.modify_order(order_id, new_price, new_quantity)
 
@@ -149,18 +151,20 @@ def save_results(latencies, throughputs, benchmark_type):
     os.makedirs(results_dir, exist_ok=True)
     
     results = {
-        "latencies": {op: times.tolist() for op, times in latencies.items()},
-        "throughputs": throughputs
+        "latencies": {op: times for op, times in latencies.items()},
+        "throughputs": {size: {op: float(tput) for op, tput in size_throughputs.items()}
+                        for size, size_throughputs in throughputs.items()}
     }
     
     filename = f"{results_dir}/{timestamp}_results.json"
     with open(filename, 'w') as f:
-        json.dump(results, f)
+        json.dump(results, f, indent=2, default=str)
     
     return filename
 
 def run_benchmarks():
-    price_levels = [Decimal(str(p)) for p in np.arange(90, 110.01, 0.01)]
+    tick_size = Decimal('0.01')
+    price_levels = [Decimal(str(p)) for p in np.arange(90, 110.01, float(tick_size))]
     order_book_sizes = [10**3, 10**4, 10**5]
     num_operations = 10000
     num_orderbooks = 5
@@ -170,7 +174,7 @@ def run_benchmarks():
 
     for size in order_book_sizes:
         print(f"\nRunning benchmark for order book size: {size}")
-        orderbooks = setup_orderbooks(num_orderbooks, size, price_levels)
+        orderbooks = setup_orderbooks(num_orderbooks, size, price_levels, tick_size)
         latencies = run_mixed_workload(orderbooks, num_operations, price_levels)
         all_latencies[size] = latencies
         print_latency_stats(latencies)
@@ -178,7 +182,7 @@ def run_benchmarks():
         throughputs[size] = {op: num_operations / sum(times) for op, times in latencies.items()}
 
     # Save results
-    results_file = save_results(all_latencies[order_book_sizes[-1]], throughputs, "multiple")
+    results_file = save_results(all_latencies, throughputs, "multiple")
     print(f"Results saved to: {results_file}")
 
     # Plot latency distributions for the largest order book size
