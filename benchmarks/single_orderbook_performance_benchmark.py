@@ -15,26 +15,28 @@ from plotly.subplots import make_subplots
 import json
 from datetime import datetime
 
-def setup_orderbook(num_initial_orders, price_levels):
-    ticker = Ticker("TEST", "0.01")
+def setup_orderbook(num_initial_orders, price_levels, tick_size):
+    ticker = Ticker("TEST", str(tick_size))
     orderbook = Orderbook(ticker)
     
     for i in range(num_initial_orders):
         side = random.choice(["buy", "sell"])
-        price = Decimal(str(random.choice(price_levels)))
+        price = generate_random_price(price_levels, tick_size)
         quantity = Decimal(str(random.randint(1, 100)))
         order = Order(i, "limit", side, price, quantity, "TEST")
         orderbook.add_order(order)
     
     return orderbook
 
-def generate_random_price(price_levels):
-    return random.choice(price_levels)
+def generate_random_price(price_levels, tick_size):
+    base_price = random.choice(price_levels)
+    tick_count = random.randint(-50, 50)
+    return (base_price + (Decimal(tick_count) * tick_size)).quantize(tick_size)
 
 def benchmark_add_limit_order(orderbook, price_levels):
     order_id = random.randint(1, 10000000)
     side = random.choice(["buy", "sell"])
-    price = generate_random_price(price_levels)
+    price = generate_random_price(price_levels, orderbook.ticker.tick_size)
     quantity = Decimal(str(random.randint(1, 100)))
     order = Order(order_id, "limit", side, price, quantity, "TEST")
     orderbook.add_order(order)
@@ -47,7 +49,7 @@ def benchmark_cancel_order(orderbook):
 def benchmark_modify_order(orderbook, price_levels):
     if orderbook.orders:
         order_id = random.choice(list(orderbook.orders.keys()))
-        new_price = generate_random_price(price_levels)
+        new_price = generate_random_price(price_levels, orderbook.ticker.tick_size)
         new_quantity = Decimal(str(random.randint(1, 100)))
         orderbook.modify_order(order_id, new_price, new_quantity)
 
@@ -118,7 +120,6 @@ def plot_latency_distribution(latencies, benchmark_type):
     fig.write_image(filename)
     print(f"Latency distribution plot saved to: {filename}")
 
-    
 def plot_throughput_vs_orderbook_size(sizes, throughputs, benchmark_type):
     fig = go.Figure()
     for op in throughputs[sizes[0]].keys():
@@ -151,7 +152,8 @@ def save_results(latencies, throughputs, benchmark_type):
     return filename
 
 def run_benchmarks():
-    price_levels = [Decimal(str(p)) for p in np.arange(90, 110.01, 0.01)]
+    tick_size = Decimal('0.01')
+    price_levels = [Decimal(str(p)) for p in np.arange(90, 110.01, float(tick_size))]
     order_book_sizes = [10**3, 10**4, 10**5, 10**6]
     num_operations = 10000
 
@@ -160,7 +162,7 @@ def run_benchmarks():
 
     for size in order_book_sizes:
         print(f"\nRunning benchmark for order book size: {size}")
-        orderbook = setup_orderbook(size, price_levels)
+        orderbook = setup_orderbook(size, price_levels, tick_size)
         latencies = run_mixed_workload(orderbook, num_operations, price_levels)
         all_latencies[size] = latencies
         print_latency_stats(latencies)
