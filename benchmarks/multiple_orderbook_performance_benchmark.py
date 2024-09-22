@@ -13,6 +13,7 @@ from collections import defaultdict
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
+from datetime import datetime
 
 def setup_orderbooks(num_orderbooks, num_initial_orders, price_levels):
     orderbooks = []
@@ -101,14 +102,14 @@ def print_latency_stats(latencies):
     print(f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12}")
     print("-" * 75)
     for op, times in latencies.items():
-        times_us = np.array(times) * 1e6  # Convert to microseconds
+        times_us = np.array(times) * 1e6  # Convert to microseconds  
         mean = np.mean(times_us)
         median = np.median(times_us)
         percentile_95 = np.percentile(times_us, 95)
         percentile_99 = np.percentile(times_us, 99)
         print(f"{op[10:]:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f}")
 
-def plot_latency_distribution(latencies):
+def plot_latency_distribution(latencies, benchmark_type):
     fig = make_subplots(rows=2, cols=3, subplot_titles=list(latencies.keys()))
     row, col = 1, 1
     for op, times in latencies.items():
@@ -121,9 +122,13 @@ def plot_latency_distribution(latencies):
             row += 1
             col = 1
     fig.update_layout(height=800, width=1200, title_text="Latency Distribution for Different Operations")
-    fig.write_image("benchmarks/multiple_orderbook_latency_distribution.png")
 
-def plot_throughput_vs_orderbook_size(sizes, throughputs):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"benchmarks/previous_benchmark_results/{benchmark_type}_orderbook/{timestamp}_latency_distribution.png"
+    fig.write_image(filename)
+    print(f"Latency distribution plot saved to: {filename}")
+    
+def plot_throughput_vs_orderbook_size(sizes, throughputs, benchmark_type):
     fig = go.Figure()
     for op in throughputs[sizes[0]].keys():
         y = [throughputs[size][op] for size in sizes]
@@ -132,15 +137,27 @@ def plot_throughput_vs_orderbook_size(sizes, throughputs):
                       xaxis_title='Order Book Size',
                       yaxis_title='Throughput (ops/sec)',
                       xaxis_type="log")
-    fig.write_image("benchmarks/multiple_orderbook_throughput.png")
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"benchmarks/previous_benchmark_results/{benchmark_type}_orderbook/{timestamp}_throughput.png"
+    fig.write_image(filename)
+    print(f"Throughput plot saved to: {filename}")
 
-def save_results(latencies, throughputs, filename):
+def save_results(latencies, throughputs, benchmark_type):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_dir = f"benchmarks/previous_benchmark_results/{benchmark_type}_orderbook"
+    os.makedirs(results_dir, exist_ok=True)
+    
     results = {
         "latencies": {op: times.tolist() for op, times in latencies.items()},
         "throughputs": throughputs
     }
+    
+    filename = f"{results_dir}/{timestamp}_results.json"
     with open(filename, 'w') as f:
         json.dump(results, f)
+    
+    return filename
 
 def run_benchmarks():
     price_levels = [Decimal(str(p)) for p in np.arange(90, 110.01, 0.01)]
@@ -161,13 +178,14 @@ def run_benchmarks():
         throughputs[size] = {op: num_operations / sum(times) for op, times in latencies.items()}
 
     # Save results
-    save_results(all_latencies[order_book_sizes[-1]], throughputs, "benchmarks/multiple_orderbook_results.json")
+    results_file = save_results(all_latencies[order_book_sizes[-1]], throughputs, "multiple")
+    print(f"Results saved to: {results_file}")
 
     # Plot latency distributions for the largest order book size
-    plot_latency_distribution(all_latencies[order_book_sizes[-1]])
+    plot_latency_distribution(all_latencies[order_book_sizes[-1]], "multiple")
 
     # Plot throughput vs order book size
-    plot_throughput_vs_orderbook_size(order_book_sizes, throughputs)
+    plot_throughput_vs_orderbook_size(order_book_sizes, throughputs, "multiple")
 
 if __name__ == "__main__":
     run_benchmarks()
