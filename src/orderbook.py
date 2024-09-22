@@ -3,41 +3,43 @@ from collections import deque
 from decimal import Decimal
 import threading
 import queue
+from typing import Dict, List, Tuple, Optional
 from .order import Order
 from .level_data import LevelData
+from .ticker import Ticker
 from .exceptions import InvalidOrderException, InsufficientLiquidityException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException
 
 class Orderbook:
-    def __init__(self, ticker):
-        self.ticker = ticker
-        self.bids = SortedDict()
-        self.asks = SortedDict()
-        self.orders = {}
-        self.level_data = {}
-        self.lock = threading.Lock()
-        self.order_queue = queue.Queue()
-        self.processing_thread = None
-        self.stop_processing_flag = False
+    def __init__(self, ticker: Ticker):
+        self.ticker: Ticker = ticker
+        self.bids: SortedDict = SortedDict()
+        self.asks: SortedDict = SortedDict()
+        self.orders: Dict[int, Order] = {}
+        self.level_data: Dict[Decimal, LevelData] = {}
+        self.lock: threading.Lock = threading.Lock()
+        self.order_queue: queue.Queue = queue.Queue()
+        self.processing_thread: Optional[threading.Thread] = None
+        self.stop_processing_flag: bool = False
 
-    def start_processing(self):
+    def start_processing(self) -> None:
         self.stop_processing_flag = False
         self.processing_thread = threading.Thread(target=self._process_orders)
         self.processing_thread.start()
 
-    def stop_processing(self):
+    def stop_processing(self) -> None:
         self.stop_processing_flag = True
         if self.processing_thread:
             self.processing_thread.join()
 
-    def _process_orders(self):
+    def _process_orders(self) -> None:
         while not self.stop_processing_flag:
             try:
-                order = self.order_queue.get(timeout=1)
+                order: Order = self.order_queue.get(timeout=1)
                 self.add_order(order)
             except queue.Empty:
                 continue
 
-    def add_order(self, order):
+    def add_order(self, order: Order) -> int:
         with self.lock:
             if order.quantity <= 0:
                 raise InvalidQuantityException("Order quantity must be positive")
@@ -48,7 +50,7 @@ class Orderbook:
             else:
                 raise InvalidOrderException("Invalid order type")
 
-    def add_limit_order(self, order):
+    def add_limit_order(self, order: Order) -> int:
         if not self.ticker.is_valid_price(order.price):
             raise InvalidTickSizeException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
 
@@ -61,7 +63,7 @@ class Orderbook:
         self.orders[order.id] = order
         return order.id
 
-    def cancel_order(self, order_id):
+    def cancel_order(self, order_id: int) -> None:
         with self.lock:
             if order_id not in self.orders:
                 raise OrderNotFoundException("Order not found")
@@ -74,7 +76,7 @@ class Orderbook:
                 del self.level_data[order.price]
             del self.orders[order_id]
 
-    def modify_order(self, order_id, new_price, new_quantity):
+    def modify_order(self, order_id: int, new_price: Decimal, new_quantity: Decimal) -> int:
         with self.lock:
             if order_id not in self.orders:
                 raise OrderNotFoundException("Order not found")
@@ -112,15 +114,15 @@ class Orderbook:
 
             return order_id
 
-    def get_best_bid_ask(self):
+    def get_best_bid_ask(self) -> Tuple[Optional[Decimal], Optional[Decimal]]:
         best_bid = max(self.bids.keys()) if self.bids else None
         best_ask = min(self.asks.keys()) if self.asks else None
         return best_bid, best_ask
 
-    def process_market_order(self, order):
+    def process_market_order(self, order: Order) -> List[Tuple[int, Decimal, Decimal]]:
         opposing_book = self.asks if order.side == "buy" else self.bids
         remaining_quantity = order.quantity
-        filled_orders = []
+        filled_orders: List[Tuple[int, Decimal, Decimal]] = []
 
         while remaining_quantity > 0 and opposing_book:
             best_price = min(opposing_book.keys()) if order.side == "buy" else max(opposing_book.keys())
@@ -150,7 +152,7 @@ class Orderbook:
 
         return filled_orders
 
-    def get_order_book_snapshot(self, levels):
+    def get_order_book_snapshot(self, levels: int) -> Dict[str, List[Tuple[Decimal, Decimal]]]:
         with self.lock:
             bids = [(price, self.level_data[price].quantity) for price in list(reversed(self.bids.keys()))[:levels]]
             asks = [(price, self.level_data[price].quantity) for price in list(self.asks.keys())[:levels]]

@@ -3,3 +3,4 @@ dash
 pandas
 numpy
 sortedcontainers
+pytest
