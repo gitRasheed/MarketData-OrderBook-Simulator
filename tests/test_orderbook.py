@@ -17,7 +17,7 @@ def test_add_limit_order(orderbook):
     order_id = orderbook.add_order(order)
     assert order_id == 1
     assert orderbook.orders[order_id] == order
-    assert orderbook.bids[Decimal("100.50")][0] == order
+    assert orderbook.bids[Decimal("100.50")].head_order == order
 
 def test_add_invalid_limit_order(orderbook):
     order = Order(1, "limit", "buy", "100.513", "10", "SPY")
@@ -88,7 +88,7 @@ def test_modify_order(orderbook):
     assert modified_order.price == Decimal("100.52")
     assert modified_order.quantity == Decimal("12")
     assert Decimal("100.50") not in orderbook.bids
-    assert orderbook.bids[Decimal("100.52")][0] == modified_order
+    assert orderbook.bids[Decimal("100.52")].head_order == modified_order
 
 def test_modify_order_invalid_price(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
