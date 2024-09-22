@@ -5,3 +5,4 @@ numpy
 sortedcontainers
 pytest
 bintrees
+kaleido
