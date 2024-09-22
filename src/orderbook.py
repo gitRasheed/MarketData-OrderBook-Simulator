@@ -1,5 +1,4 @@
 from bintrees import RBTree
-from collections import deque
 from decimal import Decimal
 import threading
 import queue
@@ -105,7 +104,8 @@ class Orderbook:
 
             return order_id
 
-    def get_best_bid_ask(self) -> Tuple[Optional[Decimal], Optional[Decimal]]:
+    @property
+    def best_bid_ask(self) -> Tuple[Optional[Decimal], Optional[Decimal]]:
         best_bid = self.bids.max_key() if self.bids else None
         best_ask = self.asks.min_key() if self.asks else None
         return best_bid, best_ask
