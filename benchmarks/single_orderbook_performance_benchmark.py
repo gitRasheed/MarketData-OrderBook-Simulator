@@ -71,35 +71,41 @@ def benchmark_get_order_book_snapshot(orderbook):
 
 def run_mixed_workload(orderbook, num_operations, price_levels):
     operations = [
-        (40, lambda: benchmark_add_limit_order(orderbook, price_levels)),
-        (20, lambda: benchmark_cancel_order(orderbook)),
-        (15, lambda: benchmark_modify_order(orderbook, price_levels)),
-        (5, lambda: benchmark_process_market_order(orderbook)),
-        (10, lambda: benchmark_get_best_bid_ask(orderbook)),
-        (10, lambda: benchmark_get_order_book_snapshot(orderbook))
+        ("Add limit order", lambda: benchmark_add_limit_order(orderbook, price_levels)),
+        ("Cancel order", lambda: benchmark_cancel_order(orderbook)),
+        ("Modify order", lambda: benchmark_modify_order(orderbook, price_levels)),
+        ("Process market order", lambda: benchmark_process_market_order(orderbook)),
+        ("Get best bid ask", lambda: benchmark_get_best_bid_ask(orderbook)),
+        ("Get order book snapshot", lambda: benchmark_get_order_book_snapshot(orderbook))
     ]
     
     latencies = defaultdict(list)
     
     for _ in range(num_operations):
-        op = random.choices([op[1] for op in operations], weights=[op[0] for op in operations])[0]
+        op_name, op = random.choices(operations, weights=[40, 20, 15, 5, 10, 10])[0]
         start_time = timeit.default_timer()
         op()
         end_time = timeit.default_timer()
-        latencies[op.__name__].append(end_time - start_time)
+        latencies[op_name].append(end_time - start_time)
     
     return latencies
 
 def print_latency_stats(latencies):
-    print(f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12}")
+    print(f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12} {'Ops/sec':<12}")
     print("-" * 75)
-    for op, times in latencies.items():
+    
+    # Sort the operations by name
+    sorted_operations = sorted(latencies.keys())
+    
+    for op in sorted_operations:
+        times = latencies[op]
         times_us = np.array(times) * 1e6  # Convert to microseconds
         mean = np.mean(times_us)
         median = np.median(times_us)
         percentile_95 = np.percentile(times_us, 95)
         percentile_99 = np.percentile(times_us, 99)
-        print(f"{op[10:]:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f}")
+        ops_per_sec = len(times) / sum(times)
+        print(f"{op:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}")
 
 def plot_latency_distribution(latencies, benchmark_type, results_dir):
     fig = make_subplots(rows=2, cols=3, subplot_titles=list(latencies.keys()))
@@ -143,16 +149,17 @@ def generate_summary(all_latencies, throughputs):
         summary += f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12} {'Ops/sec':<12}\n"
         summary += "-" * 80 + "\n"
 
-        for op, times in latencies.items():
-            times_us = np.array(times) * 1e6
+        sorted_operations = sorted(latencies.keys())
+        
+        for op in sorted_operations:
+            times_us = np.array(latencies[op]) * 1e6
             mean = np.mean(times_us)
             median = np.median(times_us)
             percentile_95 = np.percentile(times_us, 95)
             percentile_99 = np.percentile(times_us, 99)
             ops_per_sec = throughputs[size][op]
 
-            operation_name = op.replace('benchmark_', '').replace('_', ' ').capitalize()
-            summary += f"{operation_name:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}\n"
+            summary += f"{op:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}\n"
 
         summary += "\n"
 
@@ -161,7 +168,6 @@ def generate_summary(all_latencies, throughputs):
     summary += f"{'Operation':<25} {'Avg Time (s)':<15} {'Ops/sec':<12}\n"
     summary += "-" * 80 + "\n"
 
-    # Calculate overall averages
     overall_latencies = defaultdict(list)
     overall_throughputs = defaultdict(list)
     for size in all_latencies:
@@ -169,11 +175,12 @@ def generate_summary(all_latencies, throughputs):
             overall_latencies[op].extend(all_latencies[size][op])
             overall_throughputs[op].append(throughputs[size][op])
 
-    for op in overall_latencies:
+    sorted_operations = sorted(overall_latencies.keys())
+    
+    for op in sorted_operations:
         avg_time = np.mean(overall_latencies[op])
         avg_ops_per_sec = np.mean(overall_throughputs[op])
-        operation_name = op.replace('benchmark_', '').replace('_', ' ').capitalize()
-        summary += f"{operation_name:<25} {avg_time:<15.6f} {avg_ops_per_sec:<12.2f}\n"
+        summary += f"{op:<25} {avg_time:<15.6f} {avg_ops_per_sec:<12.2f}\n"
 
     return summary
 
@@ -193,12 +200,12 @@ def save_results(all_latencies, throughputs, benchmark_type):
     results["summary"] = summary
 
     summary_file = f"{results_dir}/summary.txt"
-    with open(summary_file, 'w') as f:
+    with open(summary_file, 'w', encoding='utf-8') as f:
         f.write(summary)
 
     # Save JSON results
     json_file = f"{results_dir}/results.json"
-    with open(json_file, 'w') as f:
+    with open(json_file, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2, default=str)
 
     # Save plots
@@ -230,7 +237,7 @@ def run_benchmarks():
     print(f"Results saved to: {results_dir}")
 
     # Print the summary (which is already generated and saved in save_results)
-    with open(f"{results_dir}/summary.txt", "r") as f:
+    with open(f"{results_dir}/summary.txt", "r", encoding='utf-8') as f:
         print("\nBenchmark Summary:")
         print(f.read())
 
