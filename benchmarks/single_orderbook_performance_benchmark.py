@@ -141,13 +141,14 @@ def save_results(latencies, throughputs, benchmark_type):
     os.makedirs(results_dir, exist_ok=True)
 
     results = {
-        "latencies": {op: times.tolist() for op, times in latencies.items()},
-        "throughputs": throughputs
+        "latencies": {op: times for op, times in latencies.items()},
+        "throughputs": {size: {op: float(tput) for op, tput in size_throughputs.items()}
+                        for size, size_throughputs in throughputs.items()}
     }
 
     filename = f"{results_dir}/{timestamp}_results.json"
     with open(filename, 'w') as f:
-        json.dump(results, f)
+        json.dump(results, f, indent=2, default=str)
 
     return filename
 
@@ -170,14 +171,14 @@ def run_benchmarks():
         throughputs[size] = {op: num_operations / sum(times) for op, times in latencies.items()}
 
     # Save results
-    results_file = save_results(all_latencies[order_book_sizes[-1]], throughputs, "single")
+    results_file = save_results(all_latencies, throughputs, "single")
     print(f"Results saved to: {results_file}")
 
     # Plot latency distributions for the largest order book size
     plot_latency_distribution(all_latencies[order_book_sizes[-1]], "single")
 
     # Plot throughput vs order book size
-    plot_throughput_vs_orderbook_size(order_book_sizes, throughputs, "single")  
+    plot_throughput_vs_orderbook_size(order_book_sizes, throughputs, "single")
 
 if __name__ == "__main__":
     run_benchmarks()
