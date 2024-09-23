@@ -133,10 +133,10 @@ def plot_latency_distribution(latencies, benchmark_type, results_dir):
     fig.write_image(filename)
     print(f"Latency distribution plot saved to: {filename}")
 
-def plot_throughput_vs_orderbook_size(sizes, throughputs, benchmark_type, results_dir):
+def plot_throughput_vs_orderbook_size(sizes, all_latencies, benchmark_type, results_dir):
     fig = go.Figure()
-    for op in throughputs[sizes[0]].keys():
-        y = [throughputs[size][op] for size in sizes]
+    for op in all_latencies[sizes[0]].keys():
+        y = [len(all_latencies[size][op]) / sum(all_latencies[size][op]) for size in sizes]
         fig.add_trace(go.Scatter(x=sizes, y=y, mode='lines+markers', name=op))
     fig.update_layout(title='Throughput vs Order Book Size',
                       xaxis_title='Order Book Size',
@@ -161,12 +161,13 @@ def generate_summary(all_latencies, throughputs):
         sorted_operations = sorted(latencies.keys())
         
         for op in sorted_operations:
-            times_us = np.array(latencies[op]) * 1e6
+            times = latencies[op]
+            times_us = np.array(times) * 1e6
             mean = np.mean(times_us)
             median = np.median(times_us)
             percentile_95 = np.percentile(times_us, 95)
             percentile_99 = np.percentile(times_us, 99)
-            ops_per_sec = throughputs[size][op]
+            ops_per_sec = len(times) / sum(times)
 
             summary += f"{op:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}\n"
 
@@ -182,18 +183,18 @@ def generate_summary(all_latencies, throughputs):
     for size in all_latencies:
         for op in all_latencies[size]:
             overall_latencies[op].extend(all_latencies[size][op])
-            overall_throughputs[op].append(throughputs[size][op])
 
     sorted_operations = sorted(overall_latencies.keys())
     
     for op in sorted_operations:
-        avg_time = np.mean(overall_latencies[op])
-        avg_ops_per_sec = np.mean(overall_throughputs[op])
-        summary += f"{op:<25} {avg_time:<15.6f} {avg_ops_per_sec:<12.2f}\n"
+        times = overall_latencies[op]
+        avg_time = np.mean(times)
+        ops_per_sec = len(times) / sum(times)
+        summary += f"{op:<25} {avg_time:<15.6f} {ops_per_sec:<12.2f}\n"
 
     return summary
 
-def save_results(all_latencies, throughputs, benchmark_type):
+def save_results(all_latencies, benchmark_type):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = f"benchmarks/previous_benchmark_results/{benchmark_type}_orderbook/{timestamp}"
     os.makedirs(results_dir, exist_ok=True)
@@ -201,11 +202,9 @@ def save_results(all_latencies, throughputs, benchmark_type):
     results = {
         "seed": SEED,
         "latencies": {size: {op: times for op, times in latencies.items()} for size, latencies in all_latencies.items()},
-        "throughputs": {size: {op: float(tput) for op, tput in size_throughputs.items()}
-                        for size, size_throughputs in throughputs.items()}
     }
 
-    summary = generate_summary(all_latencies, throughputs)
+    summary = generate_summary(all_latencies)
     results["summary"] = summary
 
     summary_file = f"{results_dir}/summary.txt"
@@ -217,7 +216,7 @@ def save_results(all_latencies, throughputs, benchmark_type):
         json.dump(results, f, indent=2, default=str)
 
     plot_latency_distribution(all_latencies[max(all_latencies.keys())], benchmark_type, results_dir)
-    plot_throughput_vs_orderbook_size(list(throughputs.keys()), throughputs, benchmark_type, results_dir)
+    plot_throughput_vs_orderbook_size(list(all_latencies.keys()), all_latencies, benchmark_type, results_dir)
 
     return results_dir
 
@@ -229,7 +228,6 @@ def run_benchmarks():
     num_operations = 10000
 
     all_latencies = {}
-    throughputs = {}
 
     for size in order_book_sizes:
         print(f"\nRunning benchmark for order book size: {size}")
@@ -249,10 +247,8 @@ def run_benchmarks():
         all_latencies[size] = latencies
         print_latency_stats(latencies)
 
-        throughputs[size] = {op: num_operations / sum(times) for op, times in latencies.items()}
-
     save_start = time.time()
-    results_dir = save_results(all_latencies, throughputs, "single")
+    results_dir = save_results(all_latencies, "single")
     save_end = time.time()
     print(f"Save time: {save_end - save_start:.2f} seconds")
     print(f"Results saved to: {results_dir}")

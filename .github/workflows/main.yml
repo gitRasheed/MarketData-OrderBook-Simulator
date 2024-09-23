@@ -62,7 +62,7 @@ jobs:
         path: benchmarks/previous_benchmark_results
 
     - name: Comment PR
-      uses: actions/github-script@v6
+      uses: actions/github-script@v7
       if: github.event_name == 'pull_request'
       with:
         github-token: ${{secrets.GITHUB_TOKEN}}
@@ -89,10 +89,13 @@ jobs:
           const multipleResults = JSON.parse(fs.readFileSync(multipleResultsFile.file, 'utf8'));
           
           const formatResults = (results) => {
-            return Object.entries(results.latencies).map(([op, stats]) => {
-              const mean = stats.reduce((a, b) => a + b, 0) / stats.length;
-              return `- ${op}: ${mean.toFixed(2)} μs (mean)`;
-            }).join('\n');
+            return Object.entries(results.latencies).map(([size, ops]) => {
+              return `### Order Book Size: ${size}\n` +
+                Object.entries(ops).map(([op, stats]) => {
+                  const mean = stats.reduce((a, b) => a + b, 0) / stats.length * 1e6;
+                  return `- ${op}: ${mean.toFixed(2)} μs (mean)`;
+                }).join('\n');
+            }).join('\n\n');
           };
           
           const body = `## Benchmark Results (commit: ${context.sha})
@@ -112,3 +115,6 @@ jobs:
             repo: context.repo.repo,
             body: body
           });
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true
