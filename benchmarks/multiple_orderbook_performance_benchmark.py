@@ -3,6 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import timeit
+import time
 from decimal import Decimal
 from src.orderbook import Orderbook
 from src.order import Order
@@ -15,32 +16,37 @@ import json
 from datetime import datetime
 from src.exceptions import InsufficientLiquidityException
 
-rng = np.random.default_rng(42)
+SEED = 42
+rng = np.random.default_rng(SEED)
 
-def setup_orderbook(num_initial_orders, price_levels, tick_size):
+def setup_orderbook(num_initial_orders, min_price, max_price, tick_size):
     ticker = Ticker("TEST", str(tick_size))
     orderbook = Orderbook(ticker)
     
+    sides = rng.choice(["buy", "sell"], size=num_initial_orders)
+    prices = generate_tick_appropriate_prices(num_initial_orders, min_price, max_price, tick_size)
+    quantities = rng.integers(1, 101, size=num_initial_orders)
+    
     for i in range(num_initial_orders):
-        side = rng.choice(["buy", "sell"])
-        price = generate_random_price(price_levels, tick_size)
-        quantity = Decimal(str(rng.integers(1, 100)))
-        order = Order(i, "limit", side, price, quantity, "TEST")
+        order = Order(i, "limit", sides[i], Decimal(str(prices[i])), Decimal(str(quantities[i])), "TEST")
         orderbook.add_order(order)
     
     return orderbook
 
-def generate_random_price(price_levels, tick_size):
-    base_price = rng.choice(price_levels)
-    tick_count = int(rng.integers(-50, 50))
-    return (base_price + (Decimal(tick_count) * tick_size)).quantize(tick_size)
+def generate_tick_appropriate_prices(num_prices, min_price, max_price, tick_size):
+    ticks = np.arange(min_price, max_price + tick_size, tick_size)
+    return rng.choice(ticks, size=num_prices)
 
-def benchmark_add_limit_order(orderbook, price_levels):
-    order_id = rng.integers(1, 10000000)
-    side = rng.choice(["buy", "sell"])
-    price = generate_random_price(price_levels, orderbook.ticker.tick_size)
-    quantity = Decimal(str(rng.integers(1, 100)))
-    order = Order(order_id, "limit", side, price, quantity, "TEST")
+def generate_order_params(num_orders, min_price, max_price, tick_size):
+    order_ids = rng.integers(1, 10000001, size=num_orders)
+    sides = rng.choice(["buy", "sell"], size=num_orders)
+    prices = generate_tick_appropriate_prices(num_orders, min_price, max_price, tick_size)
+    quantities = rng.integers(1, 101, size=num_orders)
+    return order_ids, sides, prices, quantities
+
+def benchmark_add_limit_order(orderbook, params):
+    order_id, side, price, quantity = next(params)
+    order = Order(order_id, "limit", side, Decimal(str(price)), Decimal(str(quantity)), "TEST")
     orderbook.add_order(order)
 
 def benchmark_cancel_order(orderbook):
@@ -48,22 +54,19 @@ def benchmark_cancel_order(orderbook):
         order_id = rng.choice(list(orderbook.orders.keys()))
         orderbook.cancel_order(order_id)
 
-def benchmark_modify_order(orderbook, price_levels):
+def benchmark_modify_order(orderbook, params):
     if orderbook.orders:
         order_id = rng.choice(list(orderbook.orders.keys()))
-        new_price = generate_random_price(price_levels, orderbook.ticker.tick_size)
-        new_quantity = Decimal(str(rng.integers(1, 100)))
-        orderbook.modify_order(order_id, new_price, new_quantity)
+        _, _, new_price, new_quantity = next(params)
+        orderbook.modify_order(order_id, Decimal(str(new_price)), Decimal(str(new_quantity)))
 
-def benchmark_process_market_order(orderbook):
-    order_id = rng.integers(1, 10000000)
-    side = rng.choice(["buy", "sell"])
-    quantity = Decimal(str(rng.integers(1, 50)))
-    order = Order(order_id, "market", side, None, quantity, "TEST")
+def benchmark_process_market_order(orderbook, params):
+    order_id, side, _, quantity = next(params)
+    order = Order(order_id, "market", side, None, Decimal(str(quantity)), "TEST")
     try:
         orderbook.add_order(order)
     except InsufficientLiquidityException:
-        pass  # Ignore insufficient liquidity errors
+        pass
     except Exception as e:
         print(f"Unexpected error processing market order: {e}")
 
@@ -73,37 +76,38 @@ def benchmark_get_best_bid_ask(orderbook):
 def benchmark_get_order_book_snapshot(orderbook):
     orderbook.get_order_book_snapshot(10)
 
-def run_mixed_workload(orderbook, num_operations, price_levels):
+def run_mixed_workload(orderbook, num_operations, params):
     operations = [
-        ("Add limit order", lambda: benchmark_add_limit_order(orderbook, price_levels)),
+        ("Add limit order", lambda: benchmark_add_limit_order(orderbook, params)),
         ("Cancel order", lambda: benchmark_cancel_order(orderbook)),
-        ("Modify order", lambda: benchmark_modify_order(orderbook, price_levels)),
-        ("Process market order", lambda: benchmark_process_market_order(orderbook)),
+        ("Modify order", lambda: benchmark_modify_order(orderbook, params)),
+        ("Process market order", lambda: benchmark_process_market_order(orderbook, params)),
         ("Get best bid ask", lambda: benchmark_get_best_bid_ask(orderbook)),
         ("Get order book snapshot", lambda: benchmark_get_order_book_snapshot(orderbook))
     ]
     
+    op_sequence = rng.choice(len(operations), size=num_operations, p=[0.40, 0.20, 0.15, 0.05, 0.10, 0.10])
+    
     latencies = defaultdict(list)
     
-    for _ in range(num_operations):
-        op_name, op = rng.choice(operations, p=[0.40, 0.20, 0.15, 0.05, 0.10, 0.10])
+    for op_index in op_sequence:
+        op_name, op = operations[op_index]
         start_time = timeit.default_timer()
         op()
         end_time = timeit.default_timer()
         latencies[op_name].append(end_time - start_time)
-
+    
     return latencies
 
 def print_latency_stats(latencies):
     print(f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12} {'Ops/sec':<12}")
     print("-" * 75)
     
-    # Sort the operations by name
     sorted_operations = sorted(latencies.keys())
     
     for op in sorted_operations:
         times = latencies[op]
-        times_us = np.array(times) * 1e6  # Convert to microseconds
+        times_us = np.array(times) * 1e6
         mean = np.mean(times_us)
         median = np.median(times_us)
         percentile_95 = np.percentile(times_us, 95)
@@ -115,7 +119,7 @@ def plot_latency_distribution(latencies, benchmark_type, results_dir):
     fig = make_subplots(rows=2, cols=3, subplot_titles=list(latencies.keys()))
     row, col = 1, 1
     for op, times in latencies.items():
-        times_us = np.array(times) * 1e6  # Convert to microseconds
+        times_us = np.array(times) * 1e6
         fig.add_trace(go.Histogram(x=times_us, name=op), row=row, col=col)
         fig.update_xaxes(title_text="Latency (μs)", row=row, col=col)
         fig.update_yaxes(title_text="Frequency", row=row, col=col)
@@ -146,7 +150,7 @@ def plot_throughput_vs_orderbook_size(sizes, throughputs, benchmark_type, result
 def generate_summary(all_latencies, throughputs):
     summary = "Benchmark Summary\n"
     summary += "=" * 80 + "\n\n"
-    summary += f"Random Seed: {rng.bit_generator.state['state']['state']}\n\n"
+    summary += f"Random Seed: {SEED}\n\n"
 
     for size, latencies in all_latencies.items():
         summary += f"Order Book Size: {size}\n"
@@ -195,13 +199,12 @@ def save_results(all_latencies, throughputs, benchmark_type):
     os.makedirs(results_dir, exist_ok=True)
 
     results = {
-        "seed": rng.bit_generator.state['state']['state'],
+        "seed": SEED,
         "latencies": {size: {op: times for op, times in latencies.items()} for size, latencies in all_latencies.items()},
         "throughputs": {size: {op: float(tput) for op, tput in size_throughputs.items()}
                         for size, size_throughputs in throughputs.items()}
     }
 
-    # Generate and save summary
     summary = generate_summary(all_latencies, throughputs)
     results["summary"] = summary
 
@@ -209,12 +212,10 @@ def save_results(all_latencies, throughputs, benchmark_type):
     with open(summary_file, 'w', encoding='utf-8') as f:
         f.write(summary)
 
-    # Save JSON results
     json_file = f"{results_dir}/results.json"
     with open(json_file, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2, default=str)
 
-    # Save plots
     plot_latency_distribution(all_latencies[max(all_latencies.keys())], benchmark_type, results_dir)
     plot_throughput_vs_orderbook_size(list(throughputs.keys()), throughputs, benchmark_type, results_dir)
 
@@ -222,7 +223,8 @@ def save_results(all_latencies, throughputs, benchmark_type):
 
 def run_benchmarks():
     tick_size = Decimal('0.01')
-    price_levels = [Decimal(str(p)) for p in np.arange(90, 110.01, float(tick_size))]
+    min_price = Decimal('90')
+    max_price = Decimal('110')
     order_book_sizes = [10**3, 10**4, 10**5, 10**6]
     num_operations = 10000
 
@@ -231,18 +233,30 @@ def run_benchmarks():
 
     for size in order_book_sizes:
         print(f"\nRunning benchmark for order book size: {size}")
-        orderbook = setup_orderbook(size, price_levels, tick_size)
-        latencies = run_mixed_workload(orderbook, num_operations, price_levels)
+        
+        setup_start = time.time()
+        orderbook = setup_orderbook(size, min_price, max_price, tick_size)
+        setup_end = time.time()
+        print(f"Setup time: {setup_end - setup_start:.2f} seconds")
+
+        params = zip(*generate_order_params(num_operations, min_price, max_price, tick_size))
+
+        workload_start = time.time()
+        latencies = run_mixed_workload(orderbook, num_operations, params)
+        workload_end = time.time()
+        print(f"Workload time: {workload_end - workload_start:.2f} seconds")
+
         all_latencies[size] = latencies
         print_latency_stats(latencies)
 
         throughputs[size] = {op: num_operations / sum(times) for op, times in latencies.items()}
 
-    # Save results
+    save_start = time.time()
     results_dir = save_results(all_latencies, throughputs, "multiple")
+    save_end = time.time()
+    print(f"Save time: {save_end - save_start:.2f} seconds")
     print(f"Results saved to: {results_dir}")
 
-    # Print the summary (which is already generated and saved in save_results)
     with open(f"{results_dir}/summary.txt", "r", encoding='utf-8') as f:
         print("\nBenchmark Summary:")
         print(f.read())
