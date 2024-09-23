@@ -13,7 +13,7 @@ class Order:
         self.filled_quantity = Decimal('0')
         self.next_order = None
         self.prev_order = None
-        self.parent_level = None
+        self.parent_limit = None
 
     def update_quantity(self, new_quantity):
         self.quantity = Decimal(str(new_quantity))
