@@ -7,7 +7,6 @@ from decimal import Decimal
 from src.orderbook import Orderbook
 from src.order import Order
 from src.ticker import Ticker
-import random
 import numpy as np
 from collections import defaultdict
 import plotly.graph_objects as go
@@ -16,48 +15,50 @@ import json
 from datetime import datetime
 from src.exceptions import InsufficientLiquidityException
 
+rng = np.random.default_rng(42)
+
 def setup_orderbook(num_initial_orders, price_levels, tick_size):
     ticker = Ticker("TEST", str(tick_size))
     orderbook = Orderbook(ticker)
     
     for i in range(num_initial_orders):
-        side = random.choice(["buy", "sell"])
+        side = rng.choice(["buy", "sell"])
         price = generate_random_price(price_levels, tick_size)
-        quantity = Decimal(str(random.randint(1, 100)))
+        quantity = Decimal(str(rng.integers(1, 100)))
         order = Order(i, "limit", side, price, quantity, "TEST")
         orderbook.add_order(order)
     
     return orderbook
 
 def generate_random_price(price_levels, tick_size):
-    base_price = random.choice(price_levels)
-    tick_count = random.randint(-50, 50)
+    base_price = rng.choice(price_levels)
+    tick_count = int(rng.integers(-50, 50))
     return (base_price + (Decimal(tick_count) * tick_size)).quantize(tick_size)
 
 def benchmark_add_limit_order(orderbook, price_levels):
-    order_id = random.randint(1, 10000000)
-    side = random.choice(["buy", "sell"])
+    order_id = rng.integers(1, 10000000)
+    side = rng.choice(["buy", "sell"])
     price = generate_random_price(price_levels, orderbook.ticker.tick_size)
-    quantity = Decimal(str(random.randint(1, 100)))
+    quantity = Decimal(str(rng.integers(1, 100)))
     order = Order(order_id, "limit", side, price, quantity, "TEST")
     orderbook.add_order(order)
 
 def benchmark_cancel_order(orderbook):
     if orderbook.orders:
-        order_id = random.choice(list(orderbook.orders.keys()))
+        order_id = rng.choice(list(orderbook.orders.keys()))
         orderbook.cancel_order(order_id)
 
 def benchmark_modify_order(orderbook, price_levels):
     if orderbook.orders:
-        order_id = random.choice(list(orderbook.orders.keys()))
+        order_id = rng.choice(list(orderbook.orders.keys()))
         new_price = generate_random_price(price_levels, orderbook.ticker.tick_size)
-        new_quantity = Decimal(str(random.randint(1, 100)))
+        new_quantity = Decimal(str(rng.integers(1, 100)))
         orderbook.modify_order(order_id, new_price, new_quantity)
 
 def benchmark_process_market_order(orderbook):
-    order_id = random.randint(1, 10000000)
-    side = random.choice(["buy", "sell"])
-    quantity = Decimal(str(random.randint(1, 50)))
+    order_id = rng.integers(1, 10000000)
+    side = rng.choice(["buy", "sell"])
+    quantity = Decimal(str(rng.integers(1, 50)))
     order = Order(order_id, "market", side, None, quantity, "TEST")
     try:
         orderbook.add_order(order)
@@ -85,12 +86,12 @@ def run_mixed_workload(orderbook, num_operations, price_levels):
     latencies = defaultdict(list)
     
     for _ in range(num_operations):
-        op_name, op = random.choices(operations, weights=[40, 20, 15, 5, 10, 10])[0]
+        op_name, op = rng.choice(operations, p=[0.40, 0.20, 0.15, 0.05, 0.10, 0.10])
         start_time = timeit.default_timer()
         op()
         end_time = timeit.default_timer()
         latencies[op_name].append(end_time - start_time)
-    
+
     return latencies
 
 def print_latency_stats(latencies):
@@ -145,6 +146,7 @@ def plot_throughput_vs_orderbook_size(sizes, throughputs, benchmark_type, result
 def generate_summary(all_latencies, throughputs):
     summary = "Benchmark Summary\n"
     summary += "=" * 80 + "\n\n"
+    summary += f"Random Seed: {rng.bit_generator.state['state']['state']}\n\n"
 
     for size, latencies in all_latencies.items():
         summary += f"Order Book Size: {size}\n"
@@ -193,6 +195,7 @@ def save_results(all_latencies, throughputs, benchmark_type):
     os.makedirs(results_dir, exist_ok=True)
 
     results = {
+        "seed": rng.bit_generator.state['state']['state'],  # Add this line
         "latencies": {size: {op: times for op, times in latencies.items()} for size, latencies in all_latencies.items()},
         "throughputs": {size: {op: float(tput) for op, tput in size_throughputs.items()}
                         for size, size_throughputs in throughputs.items()}
