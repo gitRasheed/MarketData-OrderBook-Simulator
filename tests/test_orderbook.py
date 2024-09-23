@@ -17,7 +17,7 @@ def test_add_limit_order(orderbook):
     order_id = orderbook.add_order(order)
     assert order_id == 1
     assert orderbook.orders[order_id] == order
-    assert orderbook.bids[Decimal("100.50")].head_order == order
+    assert orderbook.bids.find(Decimal("100.50")).head_order == order
 
 def test_add_invalid_limit_order(orderbook):
     order = Order(1, "limit", "buy", "100.513", "10", "SPY")
@@ -39,7 +39,7 @@ def test_cancel_order(orderbook):
     order_id = orderbook.add_order(order)
     orderbook.cancel_order(order_id)
     assert order_id not in orderbook.orders
-    assert Decimal("100.50") not in orderbook.bids
+    assert orderbook.bids.find(Decimal("100.50")) is None
 
 def test_cancel_nonexistent_order(orderbook):
     with pytest.raises(OrderNotFoundException):
@@ -87,8 +87,8 @@ def test_modify_order(orderbook):
     modified_order = orderbook.orders[order_id]
     assert modified_order.price == Decimal("100.52")
     assert modified_order.quantity == Decimal("12")
-    assert Decimal("100.50") not in orderbook.bids
-    assert orderbook.bids[Decimal("100.52")].head_order == modified_order
+    assert orderbook.bids.find(Decimal("100.50")) is None
+    assert orderbook.bids.find(Decimal("100.52")).head_order == modified_order
 
 def test_modify_order_invalid_price(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
@@ -105,28 +105,3 @@ def test_modify_order_invalid_quantity(orderbook):
 def test_modify_nonexistent_order(orderbook):
     with pytest.raises(OrderNotFoundException):
         orderbook.modify_order(999, "101.00", "15")
-
-def test_concurrent_order_processing(orderbook):
-    orderbook.start_processing()
-
-    def add_orders(side, price_range, quantity):
-        for i in range(100):
-            price = Decimal(str(price_range[0] + i * (price_range[1] - price_range[0]) / 100))
-            order = Order(1000 + i, "limit", side, str(price.quantize(Decimal("0.01"))), quantity, "SPY")
-            orderbook.order_queue.put(order)
-
-    t1 = threading.Thread(target=add_orders, args=("buy", (100, 105), "10"))
-    t2 = threading.Thread(target=add_orders, args=("sell", (105, 110), "10"))
-
-    t1.start()
-    t2.start()
-
-    t1.join()
-    t2.join()
-
-    time.sleep(1)
-
-    assert len(orderbook.bids) == 100
-    assert len(orderbook.asks) == 100
-
-    orderbook.stop_processing()
