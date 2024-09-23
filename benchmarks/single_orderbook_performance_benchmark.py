@@ -99,7 +99,6 @@ def run_mixed_workload(orderbook, num_operations, params):
     
     return latencies
 
-
 def print_latency_stats(latencies):
     print(f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12} {'Ops/sec':<12}")
     print("-" * 75)

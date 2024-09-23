@@ -19,19 +19,23 @@ from src.exceptions import InsufficientLiquidityException
 SEED = 42
 rng = np.random.default_rng(SEED)
 
-def setup_orderbook(num_initial_orders, min_price, max_price, tick_size):
-    ticker = Ticker("TEST", str(tick_size))
-    orderbook = Orderbook(ticker)
+def setup_orderbooks(num_orderbooks, num_initial_orders, min_price, max_price, tick_size):
+    orderbooks = []
+    for i in range(num_orderbooks):
+        ticker = Ticker(f"TEST{i}", str(tick_size))
+        orderbook = Orderbook(ticker)
+        
+        sides = rng.choice(["buy", "sell"], size=num_initial_orders)
+        prices = generate_tick_appropriate_prices(num_initial_orders, min_price, max_price, tick_size)
+        quantities = rng.integers(1, 101, size=num_initial_orders)
+        
+        for j in range(num_initial_orders):
+            order = Order(j, "limit", sides[j], Decimal(str(prices[j])), Decimal(str(quantities[j])), f"TEST{i}")
+            orderbook.add_order(order)
+        
+        orderbooks.append(orderbook)
     
-    sides = rng.choice(["buy", "sell"], size=num_initial_orders)
-    prices = generate_tick_appropriate_prices(num_initial_orders, min_price, max_price, tick_size)
-    quantities = rng.integers(1, 101, size=num_initial_orders)
-    
-    for i in range(num_initial_orders):
-        order = Order(i, "limit", sides[i], Decimal(str(prices[i])), Decimal(str(quantities[i])), "TEST")
-        orderbook.add_order(order)
-    
-    return orderbook
+    return orderbooks
 
 def generate_tick_appropriate_prices(num_prices, min_price, max_price, tick_size):
     ticks = np.arange(min_price, max_price + tick_size, tick_size)
@@ -44,25 +48,29 @@ def generate_order_params(num_orders, min_price, max_price, tick_size):
     quantities = rng.integers(1, 101, size=num_orders)
     return order_ids, sides, prices, quantities
 
-def benchmark_add_limit_order(orderbook, params):
+def benchmark_add_limit_order(orderbooks, params):
+    orderbook = rng.choice(orderbooks)
     order_id, side, price, quantity = next(params)
-    order = Order(order_id, "limit", side, Decimal(str(price)), Decimal(str(quantity)), "TEST")
+    order = Order(order_id, "limit", side, Decimal(str(price)), Decimal(str(quantity)), orderbook.ticker.symbol)
     orderbook.add_order(order)
 
-def benchmark_cancel_order(orderbook):
+def benchmark_cancel_order(orderbooks):
+    orderbook = rng.choice(orderbooks)
     if orderbook.orders:
         order_id = rng.choice(list(orderbook.orders.keys()))
         orderbook.cancel_order(order_id)
 
-def benchmark_modify_order(orderbook, params):
+def benchmark_modify_order(orderbooks, params):
+    orderbook = rng.choice(orderbooks)
     if orderbook.orders:
         order_id = rng.choice(list(orderbook.orders.keys()))
         _, _, new_price, new_quantity = next(params)
         orderbook.modify_order(order_id, Decimal(str(new_price)), Decimal(str(new_quantity)))
 
-def benchmark_process_market_order(orderbook, params):
+def benchmark_process_market_order(orderbooks, params):
+    orderbook = rng.choice(orderbooks)
     order_id, side, _, quantity = next(params)
-    order = Order(order_id, "market", side, None, Decimal(str(quantity)), "TEST")
+    order = Order(order_id, "market", side, None, Decimal(str(quantity)), orderbook.ticker.symbol)
     try:
         orderbook.add_order(order)
     except InsufficientLiquidityException:
@@ -70,20 +78,22 @@ def benchmark_process_market_order(orderbook, params):
     except Exception as e:
         print(f"Unexpected error processing market order: {e}")
 
-def benchmark_get_best_bid_ask(orderbook):
+def benchmark_get_best_bid_ask(orderbooks):
+    orderbook = rng.choice(orderbooks)
     _ = orderbook.best_bid_ask
 
-def benchmark_get_order_book_snapshot(orderbook):
+def benchmark_get_order_book_snapshot(orderbooks):
+    orderbook = rng.choice(orderbooks)
     orderbook.get_order_book_snapshot(10)
 
-def run_mixed_workload(orderbook, num_operations, params):
+def run_mixed_workload(orderbooks, num_operations, params):
     operations = [
-        ("Add limit order", lambda: benchmark_add_limit_order(orderbook, params)),
-        ("Cancel order", lambda: benchmark_cancel_order(orderbook)),
-        ("Modify order", lambda: benchmark_modify_order(orderbook, params)),
-        ("Process market order", lambda: benchmark_process_market_order(orderbook, params)),
-        ("Get best bid ask", lambda: benchmark_get_best_bid_ask(orderbook)),
-        ("Get order book snapshot", lambda: benchmark_get_order_book_snapshot(orderbook))
+        ("Add limit order", lambda: benchmark_add_limit_order(orderbooks, params)),
+        ("Cancel order", lambda: benchmark_cancel_order(orderbooks)),
+        ("Modify order", lambda: benchmark_modify_order(orderbooks, params)),
+        ("Process market order", lambda: benchmark_process_market_order(orderbooks, params)),
+        ("Get best bid ask", lambda: benchmark_get_best_bid_ask(orderbooks)),
+        ("Get order book snapshot", lambda: benchmark_get_order_book_snapshot(orderbooks))
     ]
     
     op_sequence = rng.choice(len(operations), size=num_operations, p=[0.40, 0.20, 0.15, 0.05, 0.10, 0.10])
@@ -225,24 +235,25 @@ def run_benchmarks():
     tick_size = Decimal('0.01')
     min_price = Decimal('90')
     max_price = Decimal('110')
-    order_book_sizes = [10**3, 10**4, 10**5, 10**6]
+    num_orderbooks = 10
+    order_book_sizes = [10**3, 10**4, 10**5]
     num_operations = 10000
 
     all_latencies = {}
     throughputs = {}
 
     for size in order_book_sizes:
-        print(f"\nRunning benchmark for order book size: {size}")
+        print(f"\nRunning benchmark for {num_orderbooks} orderbooks with size: {size}")
         
         setup_start = time.time()
-        orderbook = setup_orderbook(size, min_price, max_price, tick_size)
+        orderbooks = setup_orderbooks(num_orderbooks, size, min_price, max_price, tick_size)
         setup_end = time.time()
         print(f"Setup time: {setup_end - setup_start:.2f} seconds")
 
         params = zip(*generate_order_params(num_operations, min_price, max_price, tick_size))
 
         workload_start = time.time()
-        latencies = run_mixed_workload(orderbook, num_operations, params)
+        latencies = run_mixed_workload(orderbooks, num_operations, params)
         workload_end = time.time()
         print(f"Workload time: {workload_end - workload_start:.2f} seconds")
 
