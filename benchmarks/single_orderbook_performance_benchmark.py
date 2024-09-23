@@ -147,7 +147,7 @@ def plot_throughput_vs_orderbook_size(sizes, all_latencies, benchmark_type, resu
     fig.write_image(filename)
     print(f"Throughput plot saved to: {filename}")
 
-def generate_summary(all_latencies, throughputs):
+def generate_summary(all_latencies):
     summary = "Benchmark Summary\n"
     summary += "=" * 80 + "\n\n"
     summary += f"Random Seed: {SEED}\n\n"
@@ -179,7 +179,6 @@ def generate_summary(all_latencies, throughputs):
     summary += "-" * 80 + "\n"
 
     overall_latencies = defaultdict(list)
-    overall_throughputs = defaultdict(list)
     for size in all_latencies:
         for op in all_latencies[size]:
             overall_latencies[op].extend(all_latencies[size][op])
