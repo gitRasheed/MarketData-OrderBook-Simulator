@@ -6,3 +6,7 @@ sortedcontainers
 pytest
 bintrees
 kaleido
+line_profiler
+memory_profiler
+matplotlib
+snakeviz
