@@ -17,7 +17,7 @@ def test_add_limit_order(orderbook):
     order_id = orderbook.add_order(order)
     assert order_id == 1
     assert orderbook.orders[order_id] == order
-    assert orderbook.bids.find(Decimal("100.50")).head_order == order
+    assert orderbook.price_levels[Decimal("100.50")].head_order == order
 
 def test_add_invalid_limit_order(orderbook):
     order = Order(1, "limit", "buy", "100.513", "10", "SPY")
@@ -39,7 +39,7 @@ def test_cancel_order(orderbook):
     order_id = orderbook.add_order(order)
     orderbook.cancel_order(order_id)
     assert order_id not in orderbook.orders
-    assert orderbook.bids.find(Decimal("100.50")) is None
+    assert Decimal("100.50") not in orderbook.price_levels
 
 def test_cancel_nonexistent_order(orderbook):
     with pytest.raises(OrderNotFoundException):
@@ -78,6 +78,10 @@ def test_get_order_book_snapshot(orderbook):
         "asks": [(Decimal("100.60"), Decimal("7")), (Decimal("100.70"), Decimal("3"))]
     }
 
+def test_get_empty_order_book_snapshot(orderbook):
+    snapshot = orderbook.get_order_book_snapshot(2)
+    assert snapshot == {"bids": [], "asks": []}
+
 def test_modify_order(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
     order_id = orderbook.add_order(order)
@@ -87,8 +91,8 @@ def test_modify_order(orderbook):
     modified_order = orderbook.orders[order_id]
     assert modified_order.price == Decimal("100.52")
     assert modified_order.quantity == Decimal("12")
-    assert orderbook.bids.find(Decimal("100.50")) is None
-    assert orderbook.bids.find(Decimal("100.52")).head_order == modified_order
+    assert Decimal("100.50") not in orderbook.price_levels
+    assert orderbook.price_levels[Decimal("100.52")].head_order == modified_order
 
 def test_modify_order_invalid_price(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")

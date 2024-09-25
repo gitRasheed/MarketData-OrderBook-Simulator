@@ -12,6 +12,7 @@ class Orderbook:
         self.bids: PriceLevelTree = PriceLevelTree()
         self.asks: PriceLevelTree = PriceLevelTree()
         self.orders: Dict[int, Order] = {}
+        self.price_levels: Dict[Decimal, PriceLevel] = {}
         self.lock: threading.Lock = threading.Lock()
 
     def add_order(self, order: Order) -> int:
@@ -30,10 +31,11 @@ class Orderbook:
             raise InvalidTickSizeException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
 
         tree = self.bids if order.side == "buy" else self.asks
-        level = tree.find(order.price)
+        level = self.price_levels.get(order.price)
         if not level:
             level = PriceLevel(order.price)
             tree.insert(level)
+            self.price_levels[order.price] = level
         level.add_order(order)
         self.orders[order.id] = order
         return order.id
@@ -43,12 +45,13 @@ class Orderbook:
             if order_id not in self.orders:
                 raise OrderNotFoundException("Order not found")
             order = self.orders[order_id]
-            tree = self.bids if order.side == "buy" else self.asks
-            level = tree.find(order.price)
+            level = self.price_levels.get(order.price)
             if level:
                 level.remove_order(order)
                 if level.order_count == 0:
+                    tree = self.bids if order.side == "buy" else self.asks
                     tree.delete(order.price)
+                    del self.price_levels[order.price]
             del self.orders[order_id]
 
     def modify_order(self, order_id: int, new_price: Decimal, new_quantity: Decimal) -> int:
@@ -67,21 +70,24 @@ class Orderbook:
             old_price = order.price
             old_quantity = order.quantity
 
-            tree = self.bids if order.side == "buy" else self.asks
-            old_level = tree.find(old_price)
+            old_level = self.price_levels.get(old_price)
             old_level.remove_order(order)
 
             if old_level.order_count == 0:
+                tree = self.bids if order.side == "buy" else self.asks
                 tree.delete(old_price)
+                del self.price_levels[old_price]
 
             new_price = Decimal(str(new_price))
             order.price = new_price
             order.quantity = new_quantity
 
-            new_level = tree.find(new_price)
+            new_level = self.price_levels.get(new_price)
             if not new_level:
                 new_level = PriceLevel(new_price)
+                tree = self.bids if order.side == "buy" else self.asks
                 tree.insert(new_level)
+                self.price_levels[new_price] = new_level
             new_level.add_order(order)
 
             return order_id
@@ -121,6 +127,7 @@ class Orderbook:
     
             if best_level.order_count == 0:
                 opposing_tree.delete(best_level.price)
+                del self.price_levels[best_level.price]
     
         if remaining_quantity > 0:
             raise InsufficientLiquidityException("Not enough liquidity to fill market order")
@@ -138,31 +145,5 @@ class Orderbook:
         current = tree.max() if reverse else tree.min()
         while current and len(snapshot) < levels:
             snapshot.append((current.price, current.total_volume))
-            current = self._get_previous_level(current) if reverse else self._get_next_level(current)
+            current = tree.get_previous(current) if reverse else tree.get_next(current)
         return snapshot
-
-    def _get_next_level(self, level: PriceLevel) -> Optional[PriceLevel]:
-        if level.right_child:
-            return self._find_min(level.right_child)
-        while level.parent and level.parent.right_child == level:
-            level = level.parent
-        return level.parent
-
-    def _get_previous_level(self, level: PriceLevel) -> Optional[PriceLevel]:
-        if level.left_child:
-            return self._find_max(level.left_child)
-        while level.parent and level.parent.left_child == level:
-            level = level.parent
-        return level.parent
-
-    def _find_min(self, node: PriceLevel) -> PriceLevel:
-        current = node
-        while current.left_child:
-            current = current.left_child
-        return current
-
-    def _find_max(self, node: PriceLevel) -> PriceLevel:
-        current = node
-        while current.right_child:
-            current = current.right_child
-        return current
