@@ -139,6 +139,20 @@ class PriceLevelTree:
     def max(self) -> Optional[PriceLevel]:
         return self._highest_level
 
+    def get_previous(self, level: PriceLevel) -> Optional[PriceLevel]:
+        if level.left_child:
+            return self._find_max(level.left_child)
+        while level.parent and level.parent.left_child == level:
+            level = level.parent
+        return level.parent
+
+    def get_next(self, level: PriceLevel) -> Optional[PriceLevel]:
+        if level.right_child:
+            return self._find_min(level.right_child)
+        while level.parent and level.parent.right_child == level:
+            level = level.parent
+        return level.parent
+
     def _delete_leaf(self, level: PriceLevel) -> None:
         if level.parent:
             if level.parent.left_child == level:
