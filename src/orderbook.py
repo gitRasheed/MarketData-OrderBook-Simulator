@@ -135,10 +135,9 @@ class Orderbook:
         return filled_orders
 
     def get_order_book_snapshot(self, levels: int) -> Dict[str, List[Tuple[Decimal, Decimal]]]:
-        with self.lock:
-            bids = self._get_snapshot_for_tree(self.bids, levels, reverse=True)
-            asks = self._get_snapshot_for_tree(self.asks, levels, reverse=False)
-            return {"bids": bids, "asks": asks}
+        bids = self._get_snapshot_for_tree(self.bids, levels, reverse=True)
+        asks = self._get_snapshot_for_tree(self.asks, levels, reverse=False)
+        return {"bids": bids, "asks": asks}
 
     def _get_snapshot_for_tree(self, tree: PriceLevelTree, levels: int, reverse: bool) -> List[Tuple[Decimal, Decimal]]:
         snapshot = []
