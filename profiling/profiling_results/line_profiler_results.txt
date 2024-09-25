@@ -1,0 +1,169 @@
+Timer unit: 1e-07 s
+
+Total time: 0.763017 s
+File: C:\Users\rashe\Documents\Projects\Python\MarketData-OrderBook-Simulator\profiling\profile_orderbook.py
+Function: run_mixed_workload at line 32
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    32                                           def run_mixed_workload(ob, operations, orders):
+    33         1          6.0      6.0      0.0      order_index = 0
+    34     10001      39408.0      3.9      0.5      for operation in operations:
+    35     10000      30415.0      3.0      0.4          if operation == "add":
+    36      3979      17181.0      4.3      0.2              order = orders[order_index]
+    37      3979     267510.0     67.2      3.5              o = Order(order['id'], "limit", order['side'], Decimal(order['price']), Decimal(str(order['quantity'])), ob.ticker.symbol)
+    38      3979    1621650.0    407.6     21.3              ob.add_order(o)
+    39      3979      12206.0      3.1      0.2              order_index += 1
+    40      6021      15342.0      2.5      0.2          elif operation == "cancel":
+    41      2027       5664.0      2.8      0.1              if ob.orders:
+    42      2027    1350615.0    666.3     17.7                  order_id = list(ob.orders.keys())[order_index % len(ob.orders)]
+    43      2027     847052.0    417.9     11.1                  ob.cancel_order(order_id)
+    44      3994      10082.0      2.5      0.1          elif operation == "modify":
+    45      1510       4321.0      2.9      0.1              if ob.orders:
+    46      1510     988835.0    654.9     13.0                  order_id = list(ob.orders.keys())[order_index % len(ob.orders)]
+    47      1510       9065.0      6.0      0.1                  new_order = orders[order_index]
+    48      1510    1231939.0    815.9     16.1                  ob.modify_order(order_id, Decimal(new_order['price']), Decimal(str(new_order['quantity'])))
+    49      1510       5531.0      3.7      0.1              order_index += 1
+    50      2484       6636.0      2.7      0.1          elif operation == "market":
+    51       518       2930.0      5.7      0.0              order = orders[order_index]
+    52       518      29539.0     57.0      0.4              o = Order(order['id'], "market", order['side'], None, Decimal(str(order['quantity'])), ob.ticker.symbol)
+    53       518       1275.0      2.5      0.0              try:
+    54       518     295174.0    569.8      3.9                  ob.add_order(o)
+    55                                                       except InsufficientLiquidityException:
+    56                                                           pass
+    57       518       2278.0      4.4      0.0              order_index += 1
+    58      1966       5431.0      2.8      0.1          elif operation == "best_bid_ask":
+    59       968      40856.0     42.2      0.5              _ = ob.best_bid_ask
+    60       998       3425.0      3.4      0.0          elif operation == "snapshot":
+    61       998     785805.0    787.4     10.3              ob.get_order_book_snapshot(10)
+
+Total time: 0.181116 s
+File: C:\Users\rashe\Documents\Projects\Python\MarketData-OrderBook-Simulator\src\orderbook.py
+Function: add_order at line 17
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    17                                               def add_order(self, order: Order) -> int:
+    18      8994      41331.0      4.6      2.3          with self.lock:
+    19      4497      18327.0      4.1      1.0              if order.quantity <= 0:
+    20                                                           raise InvalidQuantityException("Order quantity must be positive")
+    21      4497      12484.0      2.8      0.7              if order.type == "market":
+    22       518     273914.0    528.8     15.1                  return self.process_market_order(order)
+    23      3979      10168.0      2.6      0.6              elif order.type == "limit":
+    24      3979    1454936.0    365.7     80.3                  return self.add_limit_order(order)
+    25                                                       else:
+    26                                                           raise InvalidOrderException("Invalid order type")
+
+Total time: 0.0756073 s
+File: C:\Users\rashe\Documents\Projects\Python\MarketData-OrderBook-Simulator\src\orderbook.py
+Function: cancel_order at line 41
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    41                                               def cancel_order(self, order_id: int) -> None:
+    42      4054      22086.0      5.4      2.9          with self.lock:
+    43      2027      14387.0      7.1      1.9              if order_id not in self.orders:
+    44                                                           raise OrderNotFoundException("Order not found")
+    45      2027      10163.0      5.0      1.3              order = self.orders[order_id]
+    46      2027      17877.0      8.8      2.4              tree = self.bids if order.side == "buy" else self.asks
+    47      2027     511736.0    252.5     67.7              level = tree.find(order.price)
+    48      2027       4890.0      2.4      0.6              if level:
+    49      2027      90653.0     44.7     12.0                  level.remove_order(order)
+    50      2027      18364.0      9.1      2.4                  if level.order_count == 0:
+    51       135      57855.0    428.6      7.7                      tree.delete(order.price)
+    52      2027       8062.0      4.0      1.1              del self.orders[order_id]
+
+Total time: 0.110427 s
+File: C:\Users\rashe\Documents\Projects\Python\MarketData-OrderBook-Simulator\src\orderbook.py
+Function: modify_order at line 54
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    54                                               def modify_order(self, order_id: int, new_price: Decimal, new_quantity: Decimal) -> int:
+    55      3020      15957.0      5.3      1.4          with self.lock:
+    56      1510       8521.0      5.6      0.8              if order_id not in self.orders:
+    57                                                           raise OrderNotFoundException("Order not found")
+    58                                           
+    59      1510      38938.0     25.8      3.5              if not self.ticker.is_valid_price(new_price):
+    60                                                           raise InvalidTickSizeException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
+    61                                           
+    62      1510      11752.0      7.8      1.1              new_quantity = Decimal(str(new_quantity))
+    63      1510       6181.0      4.1      0.6              if new_quantity <= 0:
+    64                                                           raise InvalidQuantityException("Order quantity must be positive")
+    65                                           
+    66      1510       7651.0      5.1      0.7              order = self.orders[order_id]
+    67      1510       9498.0      6.3      0.9              old_price = order.price
+    68      1510       6798.0      4.5      0.6              old_quantity = order.quantity
+    69                                           
+    70      1510       9096.0      6.0      0.8              tree = self.bids if order.side == "buy" else self.asks
+    71      1510     368961.0    244.3     33.4              old_level = tree.find(old_price)
+    72      1510      63511.0     42.1      5.8              old_level.remove_order(order)
+    73                                           
+    74      1510      12520.0      8.3      1.1              if old_level.order_count == 0:
+    75       107      40797.0    381.3      3.7                  tree.delete(old_price)
+    76                                           
+    77      1510      14718.0      9.7      1.3              new_price = Decimal(str(new_price))
+    78      1510       4324.0      2.9      0.4              order.price = new_price
+    79      1510       3589.0      2.4      0.3              order.quantity = new_quantity
+    80                                           
+    81      1510     383958.0    254.3     34.8              new_level = tree.find(new_price)
+    82      1510       3525.0      2.3      0.3              if not new_level:
+    83       129       5915.0     45.9      0.5                  new_level = PriceLevel(new_price)
+    84       129      31217.0    242.0      2.8                  tree.insert(new_level)
+    85      1510      52185.0     34.6      4.7              new_level.add_order(order)
+    86                                           
+    87      1510       4657.0      3.1      0.4              return order_id
+
+Total time: 0.0211055 s
+File: C:\Users\rashe\Documents\Projects\Python\MarketData-OrderBook-Simulator\src\orderbook.py
+Function: process_market_order at line 95
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    95                                               def process_market_order(self, order: Order) -> List[Tuple[int, Decimal, Decimal]]:
+    96       518       3558.0      6.9      1.7          opposing_tree = self.asks if order.side == "buy" else self.bids
+    97       518       2146.0      4.1      1.0          remaining_quantity = order.quantity
+    98       518       1636.0      3.2      0.8          filled_orders: List[Tuple[int, Decimal, Decimal]] = []
+    99                                               
+   100      1273       5950.0      4.7      2.8          while remaining_quantity > 0 and opposing_tree.root:
+   101       755       9541.0     12.6      4.5              best_level = opposing_tree.min() if order.side == "buy" else opposing_tree.max()
+   102       755       1760.0      2.3      0.8              if not best_level:
+   103                                                           break
+   104       755       7547.0     10.0      3.6              current_order = best_level.head_order
+   105                                               
+   106      1796       6847.0      3.8      3.2              while current_order and remaining_quantity > 0:
+   107      1041      14552.0     14.0      6.9                  filled_quantity = min(remaining_quantity, current_order.quantity)
+   108      1041       5609.0      5.4      2.7                  current_order.quantity -= filled_quantity
+   109      1041       3846.0      3.7      1.8                  remaining_quantity -= filled_quantity
+   110      1041      22481.0     21.6     10.7                  best_level.update_volume(current_order.quantity + filled_quantity, current_order.quantity)
+   111                                               
+   112      1041      12802.0     12.3      6.1                  filled_orders.append((current_order.id, filled_quantity, best_level.price))
+   113                                               
+   114      1041       4429.0      4.3      2.1                  if current_order.quantity == 0:
+   115       532       3080.0      5.8      1.5                      next_order = current_order.next_order
+   116       532      15925.0     29.9      7.5                      best_level.remove_order(current_order)
+   117       532       3771.0      7.1      1.8                      del self.orders[current_order.id]
+   118       532       6515.0     12.2      3.1                      current_order = next_order
+   119                                                           else:
+   120       509       2581.0      5.1      1.2                      current_order = current_order.next_order
+   121                                               
+   122       755       6093.0      8.1      2.9              if best_level.order_count == 0:
+   123       238      67150.0    282.1     31.8                  opposing_tree.delete(best_level.price)
+   124                                               
+   125       518       2023.0      3.9      1.0          if remaining_quantity > 0:
+   126                                                       raise InsufficientLiquidityException("Not enough liquidity to fill market order")
+   127                                               
+   128       518       1213.0      2.3      0.6          return filled_orders
+
+Total time: 0.0757909 s
+File: C:\Users\rashe\Documents\Projects\Python\MarketData-OrderBook-Simulator\src\orderbook.py
+Function: get_order_book_snapshot at line 130
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   130                                               def get_order_book_snapshot(self, levels: int) -> Dict[str, List[Tuple[Decimal, Decimal]]]:
+   131      1996       8675.0      4.3      1.1          with self.lock:
+   132       998     377387.0    378.1     49.8              bids = self._get_snapshot_for_tree(self.bids, levels, reverse=True)
+   133       998     365708.0    366.4     48.3              asks = self._get_snapshot_for_tree(self.asks, levels, reverse=False)
+   134       998       6139.0      6.2      0.8              return {"bids": bids, "asks": asks}
+
