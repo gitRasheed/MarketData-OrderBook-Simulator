@@ -21,7 +21,7 @@ rng = np.random.default_rng(SEED)
 
 def setup_orderbook(num_initial_orders, min_price, max_price, tick_size):
     ticker = Ticker("TEST", str(tick_size))
-    orderbook = Orderbook(ticker)
+    orderbook = Orderbook(ticker, min_price, max_price)
     
     sides = rng.choice(["buy", "sell"], size=num_initial_orders)
     prices = generate_tick_appropriate_prices(num_initial_orders, min_price, max_price, tick_size)

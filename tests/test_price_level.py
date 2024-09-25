@@ -10,9 +10,6 @@ def test_price_level_creation():
     assert level.order_count == 0
     assert level.head_order is None
     assert level.tail_order is None
-    assert level.parent is None
-    assert level.left_child is None
-    assert level.right_child is None
 
 def test_add_order():
     level = PriceLevel(Decimal('100.50'))
@@ -22,7 +19,7 @@ def test_add_order():
     assert level.order_count == 1
     assert level.head_order == order
     assert level.tail_order == order
-    assert order.parent_level == level
+    assert order.parent_limit == level
 
 def test_remove_order():
     level = PriceLevel(Decimal('100.50'))
@@ -33,7 +30,7 @@ def test_remove_order():
     assert level.order_count == 0
     assert level.head_order is None
     assert level.tail_order is None
-    assert order.parent_level is None
+    assert order.parent_limit is None
 
 def test_update_volume():
     level = PriceLevel(Decimal('100.50'))

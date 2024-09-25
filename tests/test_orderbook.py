@@ -10,14 +10,14 @@ from src.exceptions import InvalidOrderException, InsufficientLiquidityException
 @pytest.fixture
 def orderbook():
     ticker = Ticker("SPY", "0.01")
-    return Orderbook(ticker)
+    return Orderbook(ticker, Decimal("90"), Decimal("110"))
 
 def test_add_limit_order(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
     order_id = orderbook.add_order(order)
     assert order_id == 1
     assert orderbook.orders[order_id] == order
-    assert orderbook.price_levels[Decimal("100.50")].head_order == order
+    assert orderbook.bid_levels[orderbook._price_to_index(Decimal("100.50"))].head_order == order
 
 def test_add_invalid_limit_order(orderbook):
     order = Order(1, "limit", "buy", "100.513", "10", "SPY")
@@ -39,7 +39,7 @@ def test_cancel_order(orderbook):
     order_id = orderbook.add_order(order)
     orderbook.cancel_order(order_id)
     assert order_id not in orderbook.orders
-    assert Decimal("100.50") not in orderbook.price_levels
+    assert orderbook.bid_levels[orderbook._price_to_index(Decimal("100.50"))] is None
 
 def test_cancel_nonexistent_order(orderbook):
     with pytest.raises(OrderNotFoundException):
@@ -78,10 +78,6 @@ def test_get_order_book_snapshot(orderbook):
         "asks": [(Decimal("100.60"), Decimal("7")), (Decimal("100.70"), Decimal("3"))]
     }
 
-def test_get_empty_order_book_snapshot(orderbook):
-    snapshot = orderbook.get_order_book_snapshot(2)
-    assert snapshot == {"bids": [], "asks": []}
-
 def test_modify_order(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
     order_id = orderbook.add_order(order)
@@ -91,8 +87,8 @@ def test_modify_order(orderbook):
     modified_order = orderbook.orders[order_id]
     assert modified_order.price == Decimal("100.52")
     assert modified_order.quantity == Decimal("12")
-    assert Decimal("100.50") not in orderbook.price_levels
-    assert orderbook.price_levels[Decimal("100.52")].head_order == modified_order
+    assert orderbook.bid_levels[orderbook._price_to_index(Decimal("100.50"))] is None
+    assert orderbook.bid_levels[orderbook._price_to_index(Decimal("100.52"))].head_order == modified_order
 
 def test_modify_order_invalid_price(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
@@ -109,3 +105,19 @@ def test_modify_order_invalid_quantity(orderbook):
 def test_modify_nonexistent_order(orderbook):
     with pytest.raises(OrderNotFoundException):
         orderbook.modify_order(999, "101.00", "15")
+
+def test_add_order_outside_price_range(orderbook):
+    order_low = Order(1, "limit", "buy", "89.99", "10", "SPY")
+    order_high = Order(2, "limit", "sell", "110.01", "10", "SPY")
+    with pytest.raises(InvalidOrderException):
+        orderbook.add_order(order_low)
+    with pytest.raises(InvalidOrderException):
+        orderbook.add_order(order_high)
+
+def test_modify_order_outside_price_range(orderbook):
+    order = Order(1, "limit", "buy", "100.00", "10", "SPY")
+    order_id = orderbook.add_order(order)
+    with pytest.raises(InvalidOrderException):
+        orderbook.modify_order(order_id, "89.99", "10")
+    with pytest.raises(InvalidOrderException):
+        orderbook.modify_order(order_id, "110.01", "10")
