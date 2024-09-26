@@ -14,10 +14,11 @@ def orderbook():
 
 def test_add_limit_order(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
-    order_id = orderbook.add_order(order)
+    order_id, filled_orders = orderbook.add_order(order)
     assert order_id == 1
     assert orderbook.orders[order_id] == order
     assert orderbook.bids.find(Decimal("100.50")).head_order == order
+    assert len(filled_orders) == 0
 
 def test_add_invalid_limit_order(orderbook):
     order = Order(1, "limit", "buy", "100.513", "10", "SPY")
@@ -36,7 +37,7 @@ def test_add_invalid_order_type(orderbook):
 
 def test_cancel_order(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
-    order_id = orderbook.add_order(order)
+    order_id, _ = orderbook.add_order(order)
     orderbook.cancel_order(order_id)
     assert order_id not in orderbook.orders
     assert orderbook.bids.find(Decimal("100.50")) is None
@@ -56,7 +57,8 @@ def test_process_market_order(orderbook):
     orderbook.add_order(Order(1, "limit", "sell", "100.50", "10", "SPY"))
     orderbook.add_order(Order(2, "limit", "sell", "100.60", "5", "SPY"))
     market_order = Order(3, "market", "buy", None, "15", "SPY")
-    filled_orders = orderbook.add_order(market_order)
+    order_id, filled_orders = orderbook.add_order(market_order)
+    assert order_id == 3
     assert len(filled_orders) == 2
     assert filled_orders[0] == (1, Decimal("10"), Decimal("100.50"))
     assert filled_orders[1] == (2, Decimal("5"), Decimal("100.60"))
@@ -80,7 +82,7 @@ def test_get_order_book_snapshot(orderbook):
 
 def test_modify_order(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
-    order_id = orderbook.add_order(order)
+    order_id, _ = orderbook.add_order(order)
     
     orderbook.modify_order(order_id, "100.52", "12")
     
@@ -92,16 +94,31 @@ def test_modify_order(orderbook):
 
 def test_modify_order_invalid_price(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
-    order_id = orderbook.add_order(order)
+    order_id, _ = orderbook.add_order(order)
     with pytest.raises(InvalidTickSizeException):
         orderbook.modify_order(order_id, "100.513", "15")
 
 def test_modify_order_invalid_quantity(orderbook):
     order = Order(1, "limit", "buy", "100.50", "10", "SPY")
-    order_id = orderbook.add_order(order)
+    order_id, _ = orderbook.add_order(order)
     with pytest.raises(InvalidQuantityException):
         orderbook.modify_order(order_id, "100.52", "0")
 
 def test_modify_nonexistent_order(orderbook):
     with pytest.raises(OrderNotFoundException):
         orderbook.modify_order(999, "101.00", "15")
+
+def test_partial_fill_limit_order(orderbook):
+    orderbook.add_order(Order(1, "limit", "sell", "10.00", "10", "SPY"))
+    
+    order_id, filled_orders = orderbook.add_order(Order(2, "limit", "buy", "10.00", "20", "SPY"))
+    
+    assert len(filled_orders) == 1
+    assert filled_orders[0] == (1, Decimal("10"), Decimal("10.00"))
+    
+    assert order_id in orderbook.orders
+    remaining_order = orderbook.orders[order_id]
+    assert remaining_order.quantity == Decimal("10")
+    assert remaining_order.price == Decimal("10.00")
+    
+    assert orderbook.bids.find(Decimal("10.00")).head_order == remaining_order

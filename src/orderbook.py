@@ -14,7 +14,7 @@ class Orderbook:
         self.orders: Dict[int, Order] = {}
         self.lock: threading.Lock = threading.Lock()
 
-    def add_order(self, order: Order) -> int:
+    def add_order(self, order: Order) -> Tuple[int, List[Tuple[int, Decimal, Decimal]]]:
         with self.lock:
             if order.quantity <= 0:
                 raise InvalidQuantityException("Order quantity must be positive")
@@ -25,18 +25,51 @@ class Orderbook:
             else:
                 raise InvalidOrderException("Invalid order type")
 
-    def add_limit_order(self, order: Order) -> int:
+    def add_limit_order(self, order: Order) -> Tuple[int, List[Tuple[int, Decimal, Decimal]]]:
         if not self.ticker.is_valid_price(order.price):
             raise InvalidTickSizeException(f"Invalid price. Must be a multiple of {self.ticker.tick_size}")
 
-        tree = self.bids if order.side == "buy" else self.asks
-        level = tree.find(order.price)
-        if not level:
-            level = PriceLevel(order.price)
-            tree.insert(level)
-        level.add_order(order)
-        self.orders[order.id] = order
-        return order.id
+        opposing_tree = self.asks if order.side == "buy" else self.bids
+        remaining_quantity = order.quantity
+        filled_orders = []
+
+        while remaining_quantity > 0:
+            best_level = opposing_tree.min() if order.side == "buy" else opposing_tree.max()
+            if not best_level or (order.side == "buy" and order.price < best_level.price) or \
+               (order.side == "sell" and order.price > best_level.price):
+                break
+
+            current_order = best_level.head_order
+            while current_order and remaining_quantity > 0:
+                filled_quantity = min(remaining_quantity, current_order.quantity)
+                current_order.quantity -= filled_quantity
+                remaining_quantity -= filled_quantity
+                best_level.update_volume(current_order.quantity + filled_quantity, current_order.quantity)
+
+                filled_orders.append((current_order.id, filled_quantity, best_level.price))
+
+                if current_order.quantity == 0:
+                    next_order = current_order.next_order
+                    best_level.remove_order(current_order)
+                    self.orders.pop(current_order.id, None)
+                    current_order = next_order
+                else:
+                    current_order = current_order.next_order
+
+            if best_level.order_count == 0:
+                opposing_tree.delete(best_level.price)
+
+        if remaining_quantity > 0:
+            tree = self.bids if order.side == "buy" else self.asks
+            level = tree.find(order.price)
+            if not level:
+                level = PriceLevel(order.price)
+                tree.insert(level)
+            order.quantity = remaining_quantity
+            level.add_order(order)
+            self.orders[order.id] = order
+
+        return order.id, filled_orders
 
     def cancel_order(self, order_id: int) -> None:
         with self.lock:
@@ -92,25 +125,25 @@ class Orderbook:
         best_ask = self.asks.min().price if self.asks.root else None
         return best_bid, best_ask
 
-    def process_market_order(self, order: Order) -> List[Tuple[int, Decimal, Decimal]]:
+    def process_market_order(self, order: Order) -> Tuple[int, List[Tuple[int, Decimal, Decimal]]]:
         opposing_tree = self.asks if order.side == "buy" else self.bids
         remaining_quantity = order.quantity
         filled_orders: List[Tuple[int, Decimal, Decimal]] = []
-    
+
         while remaining_quantity > 0 and opposing_tree.root:
             best_level = opposing_tree.min() if order.side == "buy" else opposing_tree.max()
             if not best_level:
                 break
             current_order = best_level.head_order
-    
+
             while current_order and remaining_quantity > 0:
                 filled_quantity = min(remaining_quantity, current_order.quantity)
                 current_order.quantity -= filled_quantity
                 remaining_quantity -= filled_quantity
                 best_level.update_volume(current_order.quantity + filled_quantity, current_order.quantity)
-    
+
                 filled_orders.append((current_order.id, filled_quantity, best_level.price))
-    
+
                 if current_order.quantity == 0:
                     next_order = current_order.next_order
                     best_level.remove_order(current_order)
@@ -118,14 +151,14 @@ class Orderbook:
                     current_order = next_order
                 else:
                     current_order = current_order.next_order
-    
+
             if best_level.order_count == 0:
                 opposing_tree.delete(best_level.price)
-    
+
         if remaining_quantity > 0:
             raise InsufficientLiquidityException("Not enough liquidity to fill market order")
-    
-        return filled_orders
+
+        return order.id, filled_orders
 
     def get_order_book_snapshot(self, levels: int) -> Dict[str, List[Tuple[Decimal, Decimal]]]:
         with self.lock:
