@@ -1,5 +1,6 @@
 import sys
 import os
+import copy
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import timeit
@@ -23,13 +24,17 @@ def setup_orderbook(num_initial_orders, min_price, max_price, tick_size):
     ticker = Ticker("TEST", str(tick_size))
     orderbook = Orderbook(ticker)
     
-    sides = rng.choice(["buy", "sell"], size=num_initial_orders)
-    prices = generate_tick_appropriate_prices(num_initial_orders, min_price, max_price, tick_size)
-    quantities = rng.integers(1, 101, size=num_initial_orders)
+    mid_price = (min_price + max_price) / 2
+    buy_prices = generate_tick_appropriate_prices(num_initial_orders // 2, min_price, mid_price, tick_size)
+    sell_prices = generate_tick_appropriate_prices(num_initial_orders // 2, mid_price, max_price, tick_size)
     
-    for i in range(num_initial_orders):
-        order = Order(i, "limit", sides[i], Decimal(str(prices[i])), Decimal(str(quantities[i])), "TEST")
-        orderbook.add_order(order)
+    quantities = rng.integers(100, 1001, size=num_initial_orders)
+    
+    for i in range(num_initial_orders // 2):
+        buy_order = Order(i, "limit", "buy", Decimal(str(buy_prices[i])), quantities[i], "TEST")
+        sell_order = Order(i + num_initial_orders // 2, "limit", "sell", Decimal(str(sell_prices[i])), quantities[i + num_initial_orders // 2], "TEST")
+        orderbook.add_order(buy_order)
+        orderbook.add_order(sell_order)
     
     return orderbook
 
@@ -37,16 +42,41 @@ def generate_tick_appropriate_prices(num_prices, min_price, max_price, tick_size
     ticks = np.arange(min_price, max_price + tick_size, tick_size)
     return rng.choice(ticks, size=num_prices)
 
-def generate_order_params(num_orders, min_price, max_price, tick_size):
+def generate_limit_order_params(num_orders, min_price, max_price, tick_size, orderbook):
     order_ids = rng.integers(1, 10000001, size=num_orders)
     sides = rng.choice(["buy", "sell"], size=num_orders)
-    prices = generate_tick_appropriate_prices(num_orders, min_price, max_price, tick_size)
-    quantities = rng.integers(1, 101, size=num_orders)
+    
+    prices = []
+    quantities = []
+    
+    for side in sides:
+        if side == "buy":
+            price = generate_tick_appropriate_prices(1, min_price, orderbook.best_ask or max_price, tick_size)[0]
+        else:
+            price = generate_tick_appropriate_prices(1, orderbook.best_bid or min_price, max_price, tick_size)[0]
+        prices.append(price)
+        
+        quantity = rng.integers(1, 101)
+        quantities.append(quantity)
+    
     return order_ids, sides, prices, quantities
+
+def generate_market_order_params(num_orders, orderbook):
+    order_ids = rng.integers(1, 10000001, size=num_orders)
+    sides = rng.choice(["buy", "sell"], size=num_orders)
+    quantities = []
+    
+    for side in sides:
+        snapshot = orderbook.get_order_book_snapshot(10)
+        available_liquidity = sum(level[1] for level in snapshot[("asks" if side == "buy" else "bids")])
+        quantity = min(rng.integers(1, 101), max(1, available_liquidity // 100))
+        quantities.append(quantity)
+    
+    return order_ids, sides, quantities
 
 def benchmark_add_limit_order(orderbook, params):
     order_id, side, price, quantity = next(params)
-    order = Order(order_id, "limit", side, Decimal(str(price)), Decimal(str(quantity)), "TEST")
+    order = Order(order_id, "limit", side, Decimal(str(price)), quantity, "TEST")
     orderbook.add_order(order)
 
 def benchmark_cancel_order(orderbook):
@@ -55,11 +85,11 @@ def benchmark_cancel_order(orderbook):
         try:
             orderbook.cancel_order(order_id)
         except OrderNotFoundException:
-            pass  # Ignore if the order was already removed
+            pass
 
 def benchmark_process_market_order(orderbook, params):
-    order_id, side, _, quantity = next(params)
-    order = Order(order_id, "market", side, None, Decimal(str(quantity)), "TEST")
+    order_id, side, quantity = next(params)
+    order = Order(order_id, "market", side, None, quantity, "TEST")
     try:
         orderbook.add_order(order)
     except InsufficientLiquidityException:
@@ -71,48 +101,39 @@ def benchmark_get_best_bid_ask(orderbook):
 def benchmark_get_order_book_snapshot(orderbook):
     orderbook.get_order_book_snapshot(10)
 
-def run_mixed_workload(orderbook, num_operations, params):
-    operations = [
-        ("Add limit order", lambda: benchmark_add_limit_order(orderbook, params)),
-        ("Cancel order", lambda: benchmark_cancel_order(orderbook)),
-        ("Process market order", lambda: benchmark_process_market_order(orderbook, params)),
-        ("Get best bid ask", lambda: benchmark_get_best_bid_ask(orderbook)),
-        ("Get order book snapshot", lambda: benchmark_get_order_book_snapshot(orderbook))
-    ]
+def run_single_operation_benchmark(orderbook, num_operations, operation, params=None):
+    latencies = []
     
-    op_sequence = rng.choice(len(operations), size=num_operations, p=[0.45, 0.25, 0.10, 0.10, 0.10])
-    
-    latencies = defaultdict(list)
-    
-    for op_index in op_sequence:
-        op_name, op = operations[op_index]
+    for _ in range(num_operations):
         start_time = timeit.default_timer()
-        op()
+        if operation == "Add limit order":
+            benchmark_add_limit_order(orderbook, params)
+        elif operation == "Cancel order":
+            benchmark_cancel_order(orderbook)
+        elif operation == "Process market order":
+            benchmark_process_market_order(orderbook, params)
+        elif operation == "Get best bid ask":
+            benchmark_get_best_bid_ask(orderbook)
+        elif operation == "Get order book snapshot":
+            benchmark_get_order_book_snapshot(orderbook)
         end_time = timeit.default_timer()
-        latencies[op_name].append(end_time - start_time)
+        latencies.append(end_time - start_time)
     
     return latencies
 
-def print_latency_stats(latencies):
-    print(f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12} {'Ops/sec':<12}")
-    print("-" * 75)
-    
-    sorted_operations = sorted(latencies.keys())
-    
-    for op in sorted_operations:
-        times = latencies[op]
-        times_us = np.array(times) * 1e6
-        mean = np.mean(times_us)
-        median = np.median(times_us)
-        percentile_95 = np.percentile(times_us, 95)
-        percentile_99 = np.percentile(times_us, 99)
-        ops_per_sec = len(times) / sum(times)
-        print(f"{op:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}")
+def print_latency_stats(operation, latencies):
+    times_us = np.array(latencies) * 1e6
+    mean = np.mean(times_us)
+    median = np.median(times_us)
+    percentile_95 = np.percentile(times_us, 95)
+    percentile_99 = np.percentile(times_us, 99)
+    ops_per_sec = len(latencies) / sum(latencies)
+    print(f"{operation:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}")
 
-def plot_latency_distribution(latencies, results_dir):
-    fig = make_subplots(rows=2, cols=3, subplot_titles=list(latencies.keys()))
+def plot_latency_distribution(all_latencies, results_dir):
+    fig = make_subplots(rows=2, cols=3, subplot_titles=list(all_latencies.keys()))
     row, col = 1, 1
-    for op, times in latencies.items():
+    for op, times in all_latencies.items():
         times_us = np.array(times) * 1e6
         fig.add_trace(go.Histogram(x=times_us, name=op), row=row, col=col)
         fig.update_xaxes(title_text="Latency (μs)", row=row, col=col)
@@ -152,10 +173,7 @@ def generate_summary(all_latencies):
         summary += f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12} {'Ops/sec':<12}\n"
         summary += "-" * 80 + "\n"
 
-        sorted_operations = sorted(latencies.keys())
-        
-        for op in sorted_operations:
-            times = latencies[op]
+        for op, times in latencies.items():
             times_us = np.array(times) * 1e6
             mean = np.mean(times_us)
             median = np.median(times_us)
@@ -167,24 +185,6 @@ def generate_summary(all_latencies):
 
         summary += "\n"
 
-    summary += "Overall Performance Summary\n"
-    summary += "-" * 80 + "\n"
-    summary += f"{'Operation':<25} {'Avg Time (s)':<15} {'Ops/sec':<12}\n"
-    summary += "-" * 80 + "\n"
-
-    overall_latencies = defaultdict(list)
-    for size in all_latencies:
-        for op in all_latencies[size]:
-            overall_latencies[op].extend(all_latencies[size][op])
-
-    sorted_operations = sorted(overall_latencies.keys())
-    
-    for op in sorted_operations:
-        times = overall_latencies[op]
-        avg_time = np.mean(times)
-        ops_per_sec = len(times) / sum(times)
-        summary += f"{op:<25} {avg_time:<15.6f} {ops_per_sec:<12.2f}\n"
-
     return summary
 
 def save_results(all_latencies):
@@ -194,7 +194,7 @@ def save_results(all_latencies):
 
     results = {
         "seed": SEED,
-        "latencies": {size: {op: times for op, times in latencies.items()} for size, latencies in all_latencies.items()},
+        "latencies": all_latencies,
     }
 
     summary = generate_summary(all_latencies)
@@ -226,24 +226,43 @@ def run_benchmarks():
         print(f"\nRunning benchmark for order book size: {size}")
         
         setup_start = time.time()
-        orderbook = setup_orderbook(size, min_price, max_price, tick_size)
+        initial_orderbook = setup_orderbook(size, min_price, max_price, tick_size)
         setup_end = time.time()
         print(f"Setup time: {setup_end - setup_start:.2f} seconds")
 
-        params = zip(*generate_order_params(num_operations, min_price, max_price, tick_size))
+        size_latencies = {}
+        
+        operations = [
+            "Add limit order",
+            "Cancel order",
+            "Process market order",
+            "Get best bid ask",
+            "Get order book snapshot"
+        ]
 
-        workload_start = time.time()
-        latencies = run_mixed_workload(orderbook, num_operations, params)
-        workload_end = time.time()
-        print(f"Workload time: {workload_end - workload_start:.2f} seconds")
+        print(f"{'Operation':<25} {'Mean (μs)':<12} {'Median (μs)':<12} {'95th % (μs)':<12} {'99th % (μs)':<12} {'Ops/sec':<12}")
+        print("-" * 85)
 
-        all_latencies[size] = latencies
-        print_latency_stats(latencies)
+        for operation in operations:
+            orderbook = copy.deepcopy(initial_orderbook)
+
+            if operation == "Add limit order":
+                params = iter(zip(*generate_limit_order_params(num_operations, min_price, max_price, tick_size, orderbook)))
+            elif operation == "Process market order":
+                params = iter(zip(*generate_market_order_params(num_operations, orderbook)))
+            else:
+                params = None
+
+            latencies = run_single_operation_benchmark(orderbook, num_operations, operation, params)
+            size_latencies[operation] = latencies
+            print_latency_stats(operation, latencies)
+
+        all_latencies[size] = size_latencies
 
     save_start = time.time()
     results_dir = save_results(all_latencies)
     save_end = time.time()
-    print(f"Save time: {save_end - save_start:.2f} seconds")
+    print(f"\nSave time: {save_end - save_start:.2f} seconds")
     print(f"Results saved to: {results_dir}")
 
     with open(f"{results_dir}/summary.txt", "r", encoding='utf-8') as f:
