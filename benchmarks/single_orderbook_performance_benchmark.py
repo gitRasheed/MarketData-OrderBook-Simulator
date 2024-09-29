@@ -10,7 +10,6 @@ from src.orderbook import Orderbook
 from src.order import Order
 from src.ticker import Ticker
 import numpy as np
-from collections import defaultdict
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
