@@ -31,9 +31,11 @@ class OrderBookManager:
             return order_book.add_order(order)
         return None, []
 
-    def get_order_book_snapshot(self, symbol: str, levels: int):
+    def get_order_book_snapshot(self, symbol: str, levels: int = None):
         order_book = self.get_order_book(symbol)
         if order_book:
+            if levels is None:
+                levels = self.default_order_book_levels
             return order_book.get_order_book_snapshot(levels)
         return None
 
