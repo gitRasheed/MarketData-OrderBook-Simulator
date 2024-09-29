@@ -13,7 +13,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.orderbook import Orderbook
 from src.ticker import Ticker
 from src.order import Order
-from src.exceptions import InsufficientLiquidityException
+from src.exceptions import InsufficientLiquidityException, OrderNotFoundException
 
 def load_test_data():
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,13 +40,10 @@ def run_mixed_workload(ob, operations, orders):
         elif operation == "cancel":
             if ob.orders:
                 order_id = list(ob.orders.keys())[order_index % len(ob.orders)]
-                ob.cancel_order(order_id)
-        elif operation == "modify":
-            if ob.orders:
-                order_id = list(ob.orders.keys())[order_index % len(ob.orders)]
-                new_order = orders[order_index]
-                ob.modify_order(order_id, Decimal(new_order['price']), Decimal(str(new_order['quantity'])))
-            order_index += 1
+                try:
+                    ob.cancel_order(order_id)
+                except OrderNotFoundException:
+                    pass
         elif operation == "market":
             order = orders[order_index]
             o = Order(order['id'], "market", order['side'], None, Decimal(str(order['quantity'])), ob.ticker.symbol)
@@ -75,8 +72,8 @@ def run_line_profiler(ob, operations, orders):
     lp = LineProfiler()
     lp.add_function(Orderbook.add_order)
     lp.add_function(Orderbook.cancel_order)
-    lp.add_function(Orderbook.modify_order)
-    lp.add_function(Orderbook.process_market_order)
+    lp.add_function(Orderbook._process_limit_order)
+    lp.add_function(Orderbook._process_market_order)
     lp.add_function(Orderbook.get_order_book_snapshot)
     lp_wrapper = lp(run_mixed_workload)
     lp_wrapper(ob, operations, orders)

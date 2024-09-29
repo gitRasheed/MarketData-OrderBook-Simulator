@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 from datetime import datetime
-from src.exceptions import InsufficientLiquidityException
+from src.exceptions import InsufficientLiquidityException, OrderNotFoundException
 
 SEED = 42
 rng = np.random.default_rng(SEED)
@@ -52,13 +52,10 @@ def benchmark_add_limit_order(orderbook, params):
 def benchmark_cancel_order(orderbook):
     if orderbook.orders:
         order_id = rng.choice(list(orderbook.orders.keys()))
-        orderbook.cancel_order(order_id)
-
-def benchmark_modify_order(orderbook, params):
-    if orderbook.orders:
-        order_id = rng.choice(list(orderbook.orders.keys()))
-        _, _, new_price, new_quantity = next(params)
-        orderbook.modify_order(order_id, Decimal(str(new_price)), Decimal(str(new_quantity)))
+        try:
+            orderbook.cancel_order(order_id)
+        except OrderNotFoundException:
+            pass  # Ignore if the order was already removed
 
 def benchmark_process_market_order(orderbook, params):
     order_id, side, _, quantity = next(params)
@@ -67,8 +64,6 @@ def benchmark_process_market_order(orderbook, params):
         orderbook.add_order(order)
     except InsufficientLiquidityException:
         pass
-    except Exception as e:
-        print(f"Unexpected error processing market order: {e}")
 
 def benchmark_get_best_bid_ask(orderbook):
     _ = orderbook.best_bid_ask
@@ -80,13 +75,12 @@ def run_mixed_workload(orderbook, num_operations, params):
     operations = [
         ("Add limit order", lambda: benchmark_add_limit_order(orderbook, params)),
         ("Cancel order", lambda: benchmark_cancel_order(orderbook)),
-        ("Modify order", lambda: benchmark_modify_order(orderbook, params)),
         ("Process market order", lambda: benchmark_process_market_order(orderbook, params)),
         ("Get best bid ask", lambda: benchmark_get_best_bid_ask(orderbook)),
         ("Get order book snapshot", lambda: benchmark_get_order_book_snapshot(orderbook))
     ]
     
-    op_sequence = rng.choice(len(operations), size=num_operations, p=[0.40, 0.20, 0.15, 0.05, 0.10, 0.10])
+    op_sequence = rng.choice(len(operations), size=num_operations, p=[0.45, 0.25, 0.10, 0.10, 0.10])
     
     latencies = defaultdict(list)
     
@@ -115,7 +109,7 @@ def print_latency_stats(latencies):
         ops_per_sec = len(times) / sum(times)
         print(f"{op:<25} {mean:<12.2f} {median:<12.2f} {percentile_95:<12.2f} {percentile_99:<12.2f} {ops_per_sec:<12.2f}")
 
-def plot_latency_distribution(latencies, benchmark_type, results_dir):
+def plot_latency_distribution(latencies, results_dir):
     fig = make_subplots(rows=2, cols=3, subplot_titles=list(latencies.keys()))
     row, col = 1, 1
     for op, times in latencies.items():
@@ -133,7 +127,7 @@ def plot_latency_distribution(latencies, benchmark_type, results_dir):
     fig.write_image(filename)
     print(f"Latency distribution plot saved to: {filename}")
 
-def plot_throughput_vs_orderbook_size(sizes, all_latencies, benchmark_type, results_dir):
+def plot_throughput_vs_orderbook_size(sizes, all_latencies, results_dir):
     fig = go.Figure()
     for op in all_latencies[sizes[0]].keys():
         y = [len(all_latencies[size][op]) / sum(all_latencies[size][op]) for size in sizes]
@@ -193,9 +187,9 @@ def generate_summary(all_latencies):
 
     return summary
 
-def save_results(all_latencies, benchmark_type):
+def save_results(all_latencies):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_dir = f"benchmarks/previous_benchmark_results/{benchmark_type}_orderbook/{timestamp}"
+    results_dir = f"benchmarks/previous_benchmark_results/single_orderbook/{timestamp}"
     os.makedirs(results_dir, exist_ok=True)
 
     results = {
@@ -214,8 +208,8 @@ def save_results(all_latencies, benchmark_type):
     with open(json_file, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2, default=str)
 
-    plot_latency_distribution(all_latencies[max(all_latencies.keys())], benchmark_type, results_dir)
-    plot_throughput_vs_orderbook_size(list(all_latencies.keys()), all_latencies, benchmark_type, results_dir)
+    plot_latency_distribution(all_latencies[max(all_latencies.keys())], results_dir)
+    plot_throughput_vs_orderbook_size(list(all_latencies.keys()), all_latencies, results_dir)
 
     return results_dir
 
@@ -223,8 +217,8 @@ def run_benchmarks():
     tick_size = Decimal('0.01')
     min_price = Decimal('90')
     max_price = Decimal('110')
-    order_book_sizes = [10**3, 10**4, 10**5, 10**6]
-    num_operations = 10000
+    order_book_sizes = [10**4, 10**5, 10**6]
+    num_operations = 100000
 
     all_latencies = {}
 
@@ -247,7 +241,7 @@ def run_benchmarks():
         print_latency_stats(latencies)
 
     save_start = time.time()
-    results_dir = save_results(all_latencies, "single")
+    results_dir = save_results(all_latencies)
     save_end = time.time()
     print(f"Save time: {save_end - save_start:.2f} seconds")
     print(f"Results saved to: {results_dir}")
