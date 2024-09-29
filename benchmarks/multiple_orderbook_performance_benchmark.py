@@ -231,7 +231,7 @@ def run_benchmarks():
     min_price = Decimal('90')
     max_price = Decimal('110')
     num_orderbooks = 10
-    order_book_sizes = [10**4, 10**5, 10**6]
+    order_book_sizes = [10**4, 10**5]
     num_operations = 100000
 
     all_latencies = {}
