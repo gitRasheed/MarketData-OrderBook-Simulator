@@ -13,7 +13,7 @@ class Order:
         self.filled_quantity = 0
         self.next_order = None
         self.prev_order = None
-        self.parent_limit = None
+        self.parent_level = None
 
     def update_quantity(self, new_quantity):
         self.quantity = int(new_quantity)

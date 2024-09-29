@@ -1,11 +1,11 @@
-from decimal import Decimal
 from typing import Optional
+from decimal import Decimal
 from .order import Order
 
 class PriceLevel:
     def __init__(self, price: Decimal):
         self._price = Decimal(str(price))
-        self._total_volume = Decimal('0')
+        self._total_volume = 0
         self._order_count = 0
         self._head_order: Optional[Order] = None
         self._tail_order: Optional[Order] = None
@@ -18,7 +18,7 @@ class PriceLevel:
         return self._price
 
     @property
-    def total_volume(self) -> Decimal:
+    def total_volume(self) -> int:
         return self._total_volume
 
     @property
@@ -59,7 +59,7 @@ class PriceLevel:
         order.prev_order = None
         order.next_order = None
 
-    def update_volume(self, old_quantity: Decimal, new_quantity: Decimal) -> None:
+    def update_volume(self, old_quantity: int, new_quantity: int) -> None:
         self._total_volume += new_quantity - old_quantity
 
 class PriceLevelTree:
