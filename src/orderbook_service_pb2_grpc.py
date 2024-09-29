@@ -34,9 +34,9 @@ class OrderBookServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.SubscribeOrderBook = channel.unary_stream(
+        self.SubscribeOrderBook = channel.stream_stream(
                 '/orderbook.OrderBookService/SubscribeOrderBook',
-                request_serializer=orderbook__service__pb2.SubscribeRequest.SerializeToString,
+                request_serializer=orderbook__service__pb2.SubscriptionRequest.SerializeToString,
                 response_deserializer=orderbook__service__pb2.OrderBookUpdate.FromString,
                 _registered_method=True)
         self.PlaceOrder = channel.unary_unary(
@@ -49,7 +49,7 @@ class OrderBookServiceStub(object):
 class OrderBookServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def SubscribeOrderBook(self, request, context):
+    def SubscribeOrderBook(self, request_iterator, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -64,9 +64,9 @@ class OrderBookServiceServicer(object):
 
 def add_OrderBookServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'SubscribeOrderBook': grpc.unary_stream_rpc_method_handler(
+            'SubscribeOrderBook': grpc.stream_stream_rpc_method_handler(
                     servicer.SubscribeOrderBook,
-                    request_deserializer=orderbook__service__pb2.SubscribeRequest.FromString,
+                    request_deserializer=orderbook__service__pb2.SubscriptionRequest.FromString,
                     response_serializer=orderbook__service__pb2.OrderBookUpdate.SerializeToString,
             ),
             'PlaceOrder': grpc.unary_unary_rpc_method_handler(
@@ -86,7 +86,7 @@ class OrderBookService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def SubscribeOrderBook(request,
+    def SubscribeOrderBook(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -96,11 +96,11 @@ class OrderBookService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
+        return grpc.experimental.stream_stream(
+            request_iterator,
             target,
             '/orderbook.OrderBookService/SubscribeOrderBook',
-            orderbook__service__pb2.SubscribeRequest.SerializeToString,
+            orderbook__service__pb2.SubscriptionRequest.SerializeToString,
             orderbook__service__pb2.OrderBookUpdate.FromString,
             options,
             channel_credentials,

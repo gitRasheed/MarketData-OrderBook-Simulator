@@ -3,12 +3,13 @@ syntax = "proto3";
 package orderbook;
 
 service OrderBookService {
-  rpc SubscribeOrderBook (SubscribeRequest) returns (stream OrderBookUpdate) {}
+  rpc SubscribeOrderBook (stream SubscriptionRequest) returns (stream OrderBookUpdate) {}
   rpc PlaceOrder (Order) returns (OrderResponse) {}
 }
 
-message SubscribeRequest {
+message SubscriptionRequest {
   string symbol = 1;
+  bool subscribe = 2;
 }
 
 message OrderBookUpdate {
@@ -16,11 +17,30 @@ message OrderBookUpdate {
   repeated PriceLevel bids = 2;
   repeated PriceLevel asks = 3;
   bool is_snapshot = 4;
+  repeated PriceLevelUpdate changes = 5;
 }
 
 message PriceLevel {
   string price = 1;
   int32 quantity = 2;
+}
+
+message PriceLevelUpdate {
+  string price = 1;
+  int32 quantity = 2;
+  Side side = 3;
+  Action action = 4;
+}
+
+enum Side {
+  BID = 0;
+  ASK = 1;
+}
+
+enum Action {
+  ADD = 0;
+  UPDATE = 1;
+  DELETE = 2;
 }
 
 message Order {

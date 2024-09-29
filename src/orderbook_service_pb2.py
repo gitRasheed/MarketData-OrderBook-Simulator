@@ -24,23 +24,29 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17orderbook_service.proto\x12\torderbook\"\"\n\x10SubscribeRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\"\x80\x01\n\x0fOrderBookUpdate\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12#\n\x04\x62ids\x18\x02 \x03(\x0b\x32\x15.orderbook.PriceLevel\x12#\n\x04\x61sks\x18\x03 \x03(\x0b\x32\x15.orderbook.PriceLevel\x12\x13\n\x0bis_snapshot\x18\x04 \x01(\x08\"-\n\nPriceLevel\x12\r\n\x05price\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x05\"f\n\x05Order\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x10\n\x08order_id\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\r\n\x05price\x18\x05 \x01(\t\x12\x10\n\x08quantity\x18\x06 \x01(\x05\"1\n\rOrderResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t2\xa1\x01\n\x10OrderBookService\x12Q\n\x12SubscribeOrderBook\x12\x1b.orderbook.SubscribeRequest\x1a\x1a.orderbook.OrderBookUpdate\"\x00\x30\x01\x12:\n\nPlaceOrder\x12\x10.orderbook.Order\x1a\x18.orderbook.OrderResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17orderbook_service.proto\x12\torderbook\"8\n\x13SubscriptionRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x11\n\tsubscribe\x18\x02 \x01(\x08\"\xae\x01\n\x0fOrderBookUpdate\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12#\n\x04\x62ids\x18\x02 \x03(\x0b\x32\x15.orderbook.PriceLevel\x12#\n\x04\x61sks\x18\x03 \x03(\x0b\x32\x15.orderbook.PriceLevel\x12\x13\n\x0bis_snapshot\x18\x04 \x01(\x08\x12,\n\x07\x63hanges\x18\x05 \x03(\x0b\x32\x1b.orderbook.PriceLevelUpdate\"-\n\nPriceLevel\x12\r\n\x05price\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x05\"u\n\x10PriceLevelUpdate\x12\r\n\x05price\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x05\x12\x1d\n\x04side\x18\x03 \x01(\x0e\x32\x0f.orderbook.Side\x12!\n\x06\x61\x63tion\x18\x04 \x01(\x0e\x32\x11.orderbook.Action\"f\n\x05Order\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x10\n\x08order_id\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\r\n\x05price\x18\x05 \x01(\t\x12\x10\n\x08quantity\x18\x06 \x01(\x05\"1\n\rOrderResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t*\x18\n\x04Side\x12\x07\n\x03\x42ID\x10\x00\x12\x07\n\x03\x41SK\x10\x01*)\n\x06\x41\x63tion\x12\x07\n\x03\x41\x44\x44\x10\x00\x12\n\n\x06UPDATE\x10\x01\x12\n\n\x06\x44\x45LETE\x10\x02\x32\xa6\x01\n\x10OrderBookService\x12V\n\x12SubscribeOrderBook\x12\x1e.orderbook.SubscriptionRequest\x1a\x1a.orderbook.OrderBookUpdate\"\x00(\x01\x30\x01\x12:\n\nPlaceOrder\x12\x10.orderbook.Order\x1a\x18.orderbook.OrderResponse\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'orderbook_service_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_SUBSCRIBEREQUEST']._serialized_start=38
-  _globals['_SUBSCRIBEREQUEST']._serialized_end=72
-  _globals['_ORDERBOOKUPDATE']._serialized_start=75
-  _globals['_ORDERBOOKUPDATE']._serialized_end=203
-  _globals['_PRICELEVEL']._serialized_start=205
-  _globals['_PRICELEVEL']._serialized_end=250
-  _globals['_ORDER']._serialized_start=252
-  _globals['_ORDER']._serialized_end=354
-  _globals['_ORDERRESPONSE']._serialized_start=356
-  _globals['_ORDERRESPONSE']._serialized_end=405
-  _globals['_ORDERBOOKSERVICE']._serialized_start=408
-  _globals['_ORDERBOOKSERVICE']._serialized_end=569
+  _globals['_SIDE']._serialized_start=594
+  _globals['_SIDE']._serialized_end=618
+  _globals['_ACTION']._serialized_start=620
+  _globals['_ACTION']._serialized_end=661
+  _globals['_SUBSCRIPTIONREQUEST']._serialized_start=38
+  _globals['_SUBSCRIPTIONREQUEST']._serialized_end=94
+  _globals['_ORDERBOOKUPDATE']._serialized_start=97
+  _globals['_ORDERBOOKUPDATE']._serialized_end=271
+  _globals['_PRICELEVEL']._serialized_start=273
+  _globals['_PRICELEVEL']._serialized_end=318
+  _globals['_PRICELEVELUPDATE']._serialized_start=320
+  _globals['_PRICELEVELUPDATE']._serialized_end=437
+  _globals['_ORDER']._serialized_start=439
+  _globals['_ORDER']._serialized_end=541
+  _globals['_ORDERRESPONSE']._serialized_start=543
+  _globals['_ORDERRESPONSE']._serialized_end=592
+  _globals['_ORDERBOOKSERVICE']._serialized_start=664
+  _globals['_ORDERBOOKSERVICE']._serialized_end=830
 # @@protoc_insertion_point(module_scope)
