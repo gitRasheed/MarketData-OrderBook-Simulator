@@ -118,8 +118,25 @@ class Orderbook:
         return order_id
 
     def get_order_book_snapshot(self, levels: int) -> Dict[str, List[Tuple[Decimal, int]]]:
-        bids = self._get_snapshot_for_tree(self.bids, levels, reverse=True)
-        asks = self._get_snapshot_for_tree(self.asks, levels, reverse=False)
+        bids = []
+        asks = []
+
+        bid_node = self.bids.max()
+        for _ in range(levels):
+            if bid_node:
+                bids.append((bid_node.price, bid_node.total_volume))
+                bid_node = self._get_previous_level(bid_node)
+            else:
+                break
+
+        ask_node = self.asks.min()
+        for _ in range(levels):
+            if ask_node:
+                asks.append((ask_node.price, ask_node.total_volume))
+                ask_node = self._get_next_level(ask_node)
+            else:
+                break
+
         return {"bids": bids, "asks": asks}
 
     def _match_orders_at_level(self, level: PriceLevel, quantity: int) -> Tuple[int, List[Tuple[int, int, Decimal]]]:
