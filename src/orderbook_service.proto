@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package orderbook;
+
+service OrderBookService {
+  rpc SubscribeOrderBook (SubscribeRequest) returns (stream OrderBookUpdate) {}
+  rpc PlaceOrder (Order) returns (OrderResponse) {}
+}
+
+message SubscribeRequest {
+  string symbol = 1;
+}
+
+message OrderBookUpdate {
+  string symbol = 1;
+  repeated PriceLevel bids = 2;
+  repeated PriceLevel asks = 3;
+  bool is_snapshot = 4;
+}
+
+message PriceLevel {
+  string price = 1;
+  int32 quantity = 2;
+}
+
+message Order {
+  string symbol = 1;
+  string order_id = 2;
+  string side = 3;
+  string type = 4;
+  string price = 5;
+  int32 quantity = 6;
+}
+
+message OrderResponse {
+  string order_id = 1;
+  string status = 2;
+}
