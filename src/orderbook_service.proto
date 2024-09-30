@@ -18,6 +18,7 @@ message OrderBookUpdate {
   repeated PriceLevel asks = 3;
   bool is_snapshot = 4;
   repeated PriceLevelUpdate changes = 5;
+  int64 version = 6;
 }
 
 message PriceLevel {
