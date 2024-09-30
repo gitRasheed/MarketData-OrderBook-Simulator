@@ -29,9 +29,9 @@ class OrderBookServer(OrderBookServiceServicer):
 
                 while subscribed_symbols:
                     for symbol in subscribed_symbols:
-                        update = self.order_book_manager.get_order_book_update(symbol)
+                        update, version = self.order_book_manager.get_order_book_update(symbol)
                         if update:
-                            yield self._create_incremental_update(symbol, update)
+                            yield self._create_incremental_update(symbol, update, version)
                     time.sleep(0.1)  # Adjust the sleep time as needed
         except grpc.RpcError:
             for symbol in subscribed_symbols:
@@ -46,19 +46,20 @@ class OrderBookServer(OrderBookServiceServicer):
             request.quantity,
             request.symbol
         )
-        order_id, _ = self.order_book_manager.process_order(order)
+        order_id, _, _ = self.order_book_manager.process_order(order)
         return OrderResponse(order_id=str(order_id), status="PLACED")
 
     def _create_snapshot(self, symbol):
-        snapshot = self.order_book_manager.get_order_book_snapshot(symbol)
+        snapshot, version = self.order_book_manager.get_order_book_snapshot(symbol)
         return OrderBookUpdate(
             symbol=symbol,
             bids=[PriceLevel(price=str(price), quantity=quantity) for price, quantity in snapshot['bids']],
             asks=[PriceLevel(price=str(price), quantity=quantity) for price, quantity in snapshot['asks']],
-            is_snapshot=True
+            is_snapshot=True,
+            version=version
         )
 
-    def _create_incremental_update(self, symbol, updates):
+    def _create_incremental_update(self, symbol, updates, version):
         return OrderBookUpdate(
             symbol=symbol,
             is_snapshot=False,
@@ -70,11 +71,12 @@ class OrderBookServer(OrderBookServiceServicer):
                     action=Action.ADD if update['action'] == 'add' else Action.UPDATE if update['action'] == 'update' else Action.DELETE
                 )
                 for update in updates
-            ]
+            ],
+            version=version
         )
 
     def _create_empty_update(self, symbol):
-        return OrderBookUpdate(symbol=symbol, is_snapshot=True)
+        return OrderBookUpdate(symbol=symbol, is_snapshot=True, version=0)
 
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

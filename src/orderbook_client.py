@@ -1,7 +1,7 @@
 import grpc
 import json
 import argparse
-from .orderbook_service_pb2 import SubscribeRequest, Order
+from .orderbook_service_pb2 import SubscriptionRequest, Order, OrderBookUpdate
 from .orderbook_service_pb2_grpc import OrderBookServiceStub
 
 class OrderBookClient:
@@ -12,20 +12,37 @@ class OrderBookClient:
         self.stub = OrderBookServiceStub(channel)
 
     def subscribe_order_book(self, symbol):
-        request = SubscribeRequest(symbol=symbol)
+        def request_iterator():
+            yield SubscriptionRequest(symbol=symbol, subscribe=True)
+            while True:
+                user_input = input("Enter 'u' to unsubscribe or press Enter to continue: ")
+                if user_input.lower() == 'u':
+                    yield SubscriptionRequest(symbol=symbol, subscribe=False)
+                    break
+
         try:
-            for update in self.stub.SubscribeOrderBook(request):
-                print(f"Received update for {update.symbol}:")
-                print("Bids:")
-                for bid in update.bids:
-                    print(f"  Price: {bid.price}, Quantity: {bid.quantity}")
-                print("Asks:")
-                for ask in update.asks:
-                    print(f"  Price: {ask.price}, Quantity: {ask.quantity}")
-                print(f"Is snapshot: {update.is_snapshot}")
-                print("------------------------")
+            for update in self.stub.SubscribeOrderBook(request_iterator()):
+                self._handle_update(update)
         except grpc.RpcError as e:
             print(f"RPC error: {e}")
+
+    def _handle_update(self, update: OrderBookUpdate):
+        print(f"Received update for {update.symbol}:")
+        if update.is_snapshot:
+            print("Snapshot:")
+            print("Bids:")
+            for bid in update.bids:
+                print(f"  Price: {bid.price}, Quantity: {bid.quantity}")
+            print("Asks:")
+            for ask in update.asks:
+                print(f"  Price: {ask.price}, Quantity: {ask.quantity}")
+        else:
+            print("Incremental Update:")
+            for change in update.changes:
+                print(f"  {'Bid' if change.side == 0 else 'Ask'} - "
+                      f"Price: {change.price}, Quantity: {change.quantity}, "
+                      f"Action: {'Add' if change.action == 0 else 'Update' if change.action == 1 else 'Delete'}")
+        print("------------------------")
 
     def place_order(self, symbol, order_id, side, order_type, price, quantity):
         order = Order(
