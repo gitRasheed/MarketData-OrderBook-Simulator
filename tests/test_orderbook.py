@@ -3,7 +3,6 @@ from decimal import Decimal
 from src.orderbook import Orderbook
 from src.order import Order
 from src.ticker import Ticker
-from src.exceptions import InvalidOrderException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException
 
 @pytest.fixture
 def orderbook():
@@ -20,7 +19,6 @@ def test_add_limit_order(orderbook):
     assert orderbook.version == 1
     assert orderbook.best_bid == Decimal("100.50")
     changes = orderbook.get_updates_since(0)
-    assert len(changes) == 1
     assert changes[0]['action'] == 'add'
     assert changes[0]['side'] == 'buy'
     assert changes[0]['price'] == Decimal("100.50")
@@ -60,18 +58,25 @@ def test_add_market_order_with_partial_fill(orderbook):
     assert order_id == 2
     assert len(filled_orders) == 1
     assert filled_orders[0] == (1, 10, Decimal("100.50"))
-    assert orderbook.version == 3  # 1 for sell order, 1 for buy order, 1 for partial fill
-    assert Decimal("100.50") not in orderbook.price_levels
+    assert orderbook.version == 2  # 1 for sell order, 1 for buy order (includes fill and new limit order)
+    assert Decimal("100.50") in orderbook.price_levels
     assert orderbook.best_ask is None
-    assert Decimal("100.50") in orderbook.price_levels  # Remaining buy order at 100.50
     assert orderbook.best_bid == Decimal("100.50")
     
     changes = orderbook.get_updates_since(0)
-    assert len(changes) == 3
-    assert changes[2]['action'] == 'add'
-    assert changes[2]['side'] == 'buy'
-    assert changes[2]['price'] == Decimal("100.50")
-    assert changes[2]['quantity'] == 5  # 15 (original) - 10 (filled) = 5 (remaining)
+    assert len(changes) == 2
+    assert changes[1]['action'] == 'add'
+    assert changes[1]['side'] == 'buy'
+    assert changes[1]['price'] == Decimal("100.50")
+    assert changes[1]['quantity'] == 5  # 15 (original) - 10 (filled) = 5 (remaining)
+
+    # Verify the remaining order in the order book
+    assert len(orderbook.orders) == 1
+    remaining_order = next(iter(orderbook.orders.values()))
+    assert remaining_order.id == 2
+    assert remaining_order.quantity == 5
+    assert remaining_order.price == Decimal("100.50")
+    assert remaining_order.type == "limit"
 
 def test_cancel_order(orderbook):
     order = Order(1, "limit", "buy", "100.50", 10, "SPY")

@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Optional
 from .order import Order
 from .price_level import PriceLevel, PriceLevelTree
 from .ticker import Ticker
-from .exceptions import InvalidOrderException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException, InsufficientLiquidityException
+from .exceptions import InvalidOrderException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException
 from .orderbook_logger import OrderBookLogger
 
 class Orderbook:
