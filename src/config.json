@@ -1,0 +1,12 @@
+{
+    "server_port": 50051,
+    "instruments": {
+      "AAPL": {
+        "tick_size": "0.01"
+      },
+      "GOOGL": {
+        "tick_size": "0.01"
+      }
+    },
+    "default_order_book_levels": 10
+  }

@@ -10,3 +10,6 @@ line_profiler
 memory_profiler
 matplotlib
 snakeviz
+grpcio
+grpcio-tools
+protobuf
