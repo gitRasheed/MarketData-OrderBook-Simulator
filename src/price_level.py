@@ -34,7 +34,7 @@ class PriceLevel:
         return self._tail_order
 
     def add_order(self, order: Order) -> None:
-        self._total_volume += order.quantity
+        self.update_volume(0, order.quantity)
         self._order_count += 1
         if not self._head_order:
             self._head_order = self._tail_order = order
@@ -45,7 +45,7 @@ class PriceLevel:
         order.parent_level = self
 
     def remove_order(self, order: Order) -> None:
-        self._total_volume -= order.quantity
+        self.update_volume(order.quantity, 0)
         self._order_count -= 1
         if order.prev_order:
             order.prev_order.next_order = order.next_order
@@ -164,7 +164,7 @@ class PriceLevelTree:
         successor = self._find_min(level.right_child)
         self.delete(successor.price)
         level._price = successor.price
-        level._total_volume = successor.total_volume
+        level.update_volume(level.total_volume, successor.total_volume)
         level._order_count = successor.order_count
         level._head_order = successor.head_order
         level._tail_order = successor.tail_order
