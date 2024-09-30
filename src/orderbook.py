@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Optional
 from .order import Order
 from .price_level import PriceLevel, PriceLevelTree
 from .ticker import Ticker
-from .exceptions import InvalidOrderException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException
+from .exceptions import InvalidOrderException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException, InsufficientLiquidityException
 from .orderbook_logger import OrderBookLogger
 
 class Orderbook:
@@ -12,6 +12,7 @@ class Orderbook:
         self.bids: PriceLevelTree = PriceLevelTree()
         self.asks: PriceLevelTree = PriceLevelTree()
         self.orders: Dict[int, Order] = {}
+        self.price_levels: Dict[Decimal, PriceLevel] = {}
         self.best_bid: Optional[Decimal] = None
         self.best_ask: Optional[Decimal] = None
         self.logger = OrderBookLogger(ticker.symbol)
@@ -24,9 +25,6 @@ class Orderbook:
     
         if order.type == "market":
             order_id, filled_orders = self._process_market_order(order)
-            total_filled = sum(fill[1] for fill in filled_orders)
-            if total_filled < order.quantity:
-                self._log_change('partial_fill', order.side, order.price, total_filled)
         elif order.type == "limit":
             order_id, filled_orders = self._process_limit_order(order)
         else:
@@ -37,31 +35,13 @@ class Orderbook:
 
     def _process_market_order(self, order: Order) -> Tuple[int, List[Tuple[int, int, Decimal]]]:
         opposing_tree = self.asks if order.side == "buy" else self.bids
-        remaining_quantity = order.quantity
-        filled_orders = []
+        if not opposing_tree.root:
+            return order.id, []  # Return empty list if no opposing orders
 
-        while remaining_quantity > 0 and opposing_tree.root:
-            best_level = opposing_tree.min() if order.side == "buy" else opposing_tree.max()
-            if not best_level:
-                break
+        worst_price = opposing_tree.max().price if order.side == "buy" else opposing_tree.min().price
+        order.to_good_till_cancel(worst_price)  # Convert to limit order at worst price
 
-            filled_quantity, level_orders = self._match_orders_at_level(best_level, remaining_quantity)
-            remaining_quantity -= filled_quantity
-            filled_orders.extend(level_orders)
-
-            if best_level.order_count == 0:
-                opposing_tree.delete(best_level.price)
-                if order.side == "buy":
-                    self.best_ask = opposing_tree.min().price if opposing_tree.root else None
-                else:
-                    self.best_bid = opposing_tree.max().price if opposing_tree.root else None
-
-        if remaining_quantity > 0:
-            self._log_change('partial_fill', order.side, None, order.quantity - remaining_quantity)
-        else:
-            self._log_change('fill', order.side, None, order.quantity)
-
-        return order.id, filled_orders
+        return self._process_limit_order(order)  # Process as a limit order
 
     def _process_limit_order(self, order: Order) -> Tuple[int, List[Tuple[int, int, Decimal]]]:
         if not self.ticker.is_valid_price(order.price):
@@ -82,27 +62,33 @@ class Orderbook:
             filled_orders.extend(level_orders)
 
             if best_level.order_count == 0:
-                opposing_tree.delete(best_level.price)
+                self._remove_price_level(best_level)
                 best_opposing_price = opposing_tree.min().price if opposing_tree.root else None
 
         if remaining_quantity > 0:
-            tree = self.bids if order.side == "buy" else self.asks
-            level = tree.find(order.price)
-            if not level:
-                level = PriceLevel(order.price)
-                tree.insert(level)
-            order.quantity = remaining_quantity
-            level.add_order(order)
-            self.orders[order.id] = order
-
-            if order.side == "buy":
-                if not self.best_bid or order.price > self.best_bid:
-                    self.best_bid = order.price
-            else:
-                if not self.best_ask or order.price < self.best_ask:
-                    self.best_ask = order.price
+            self._add_order_to_level(order, remaining_quantity)
 
         return order.id, filled_orders
+
+    def _add_order_to_level(self, order: Order, quantity: int):
+        tree = self.bids if order.side == "buy" else self.asks
+        if order.price not in self.price_levels:
+            level = PriceLevel(order.price)
+            self.price_levels[order.price] = level
+            tree.insert(level)
+        else:
+            level = self.price_levels[order.price]
+        
+        order.quantity = quantity
+        level.add_order(order)
+        self.orders[order.id] = order
+
+        if order.side == "buy":
+            if not self.best_bid or order.price > self.best_bid:
+                self.best_bid = order.price
+        else:
+            if not self.best_ask or order.price < self.best_ask:
+                self.best_ask = order.price
 
     def cancel_order(self, order_id: int) -> None:
         if order_id not in self.orders:
@@ -179,13 +165,20 @@ class Orderbook:
         return filled_quantity, filled_orders
 
     def _remove_order(self, order: Order) -> None:
-        tree = self.bids if order.side == "buy" else self.asks
-        level = tree.find(order.price)
-        if level:
-            level.remove_order(order)
-            if level.order_count == 0:
-                tree.delete(order.price)
+        level = order.parent_level
+        level.remove_order(order)
+        if level.order_count == 0:
+            self._remove_price_level(level)
         del self.orders[order.id]
+
+    def _remove_price_level(self, level: PriceLevel) -> None:
+        tree = self.bids if level.price <= (self.best_bid or Decimal('-inf')) else self.asks
+        tree.delete(level.price)
+        self.price_levels.pop(level.price, None)
+        if level.price == self.best_bid:
+            self.best_bid = self.bids.max().price if self.bids.root else None
+        elif level.price == self.best_ask:
+            self.best_ask = self.asks.min().price if self.asks.root else None
 
     def _decrease_order_quantity(self, order: Order, new_quantity: int) -> None:
         level = order.parent_level
@@ -195,18 +188,7 @@ class Orderbook:
     def _increase_order_quantity(self, order: Order, new_quantity: int) -> None:
         self._remove_order(order)
         order.quantity = new_quantity
-        self._process_limit_order(order)
-
-    def _get_snapshot_for_tree(self, tree: PriceLevelTree, levels: int, reverse: bool) -> List[Tuple[Decimal, int]]:
-        snapshot = []
-        current = tree.max() if reverse else tree.min()
-        while current and len(snapshot) < levels:
-            snapshot.append((current.price, current.total_volume))
-            if reverse:
-                current = self._get_previous_level(current)
-            else:
-                current = self._get_next_level(current)
-        return snapshot
+        self._add_order_to_level(order, new_quantity)
 
     def _get_next_level(self, level: PriceLevel) -> Optional[PriceLevel]:
         if level.right_child:
@@ -254,9 +236,7 @@ class Orderbook:
 
     @property
     def best_bid_ask(self) -> Tuple[Optional[Decimal], Optional[Decimal]]:
-        best_bid = self.bids.max().price if self.bids.root else None
-        best_ask = self.asks.min().price if self.asks.root else None
-        return best_bid, best_ask
+        return self.best_bid, self.best_ask
 
     @property
     def current_version(self):

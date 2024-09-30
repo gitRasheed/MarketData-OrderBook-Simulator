@@ -20,3 +20,9 @@ class Order:
 
     def is_filled(self):
         return self.filled_quantity == self.quantity
+
+    def to_good_till_cancel(self, price):
+        if self.type != "market":
+            raise ValueError("Only market orders can be converted to good till cancel")
+        self.type = "limit"
+        self.price = Decimal(str(price))

@@ -33,6 +33,8 @@ class OrderBookManager:
         if order_book:
             order_id, filled_orders = order_book.add_order(order)
             version = order_book.current_version
+            if filled_orders and len(filled_orders) > 0:
+                version += 1  # Increment version for partial fills
             return order_id, filled_orders, version
         return None, [], 0
 
