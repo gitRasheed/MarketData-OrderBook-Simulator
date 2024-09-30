@@ -4,6 +4,7 @@ from .order import Order
 from .price_level import PriceLevel, PriceLevelTree
 from .ticker import Ticker
 from .exceptions import InvalidOrderException, OrderNotFoundException, InvalidTickSizeException, InvalidQuantityException
+from .orderbook_logger import OrderBookLogger
 
 class Orderbook:
     def __init__(self, ticker: Ticker):
@@ -13,21 +14,26 @@ class Orderbook:
         self.orders: Dict[int, Order] = {}
         self.best_bid: Optional[Decimal] = None
         self.best_ask: Optional[Decimal] = None
+        self.logger = OrderBookLogger(ticker.symbol)
+        self.changes: List[Dict] = []
+        self.version = 0
 
     def add_order(self, order: Order) -> Tuple[int, List[Tuple[int, int, Decimal]]]:
         if order.quantity <= 0:
             raise InvalidQuantityException("Order quantity must be positive")
-
+    
         if order.type == "market":
             order_id, filled_orders = self._process_market_order(order)
             total_filled = sum(fill[1] for fill in filled_orders)
             if total_filled < order.quantity:
-                print(f"Market order partially filled. Filled: {total_filled}, Canceled: {order.quantity - total_filled}")
-            return order_id, filled_orders
+                self._log_change('partial_fill', order.side, order.price, total_filled)
         elif order.type == "limit":
-            return self._process_limit_order(order)
+            order_id, filled_orders = self._process_limit_order(order)
         else:
             raise InvalidOrderException("Invalid order type")
+    
+        self._log_change('add', order.side, order.price, order.quantity)
+        return order_id, filled_orders
 
     def _process_market_order(self, order: Order) -> Tuple[int, List[Tuple[int, int, Decimal]]]:
         opposing_tree = self.asks if order.side == "buy" else self.bids
@@ -49,6 +55,11 @@ class Orderbook:
                     self.best_ask = opposing_tree.min().price if opposing_tree.root else None
                 else:
                     self.best_bid = opposing_tree.max().price if opposing_tree.root else None
+
+        if remaining_quantity > 0:
+            self._log_change('partial_fill', order.side, None, order.quantity - remaining_quantity)
+        else:
+            self._log_change('fill', order.side, None, order.quantity)
 
         return order.id, filled_orders
 
@@ -98,6 +109,7 @@ class Orderbook:
             raise OrderNotFoundException("Order not found")
         order = self.orders[order_id]
         self._remove_order(order)
+        self._log_change('delete', order.side, order.price, order.quantity)
 
     def modify_order(self, order_id: int, new_quantity: int) -> int:
         if order_id not in self.orders:
@@ -115,6 +127,7 @@ class Orderbook:
         elif new_quantity > old_quantity:
             self._increase_order_quantity(order, new_quantity)
 
+        self._log_change('update', order.side, order.price, new_quantity)
         return order_id
 
     def get_order_book_snapshot(self, levels: int) -> Dict[str, List[Tuple[Decimal, int]]]:
@@ -221,8 +234,30 @@ class Orderbook:
             current = current.right_child
         return current
 
+    def _log_change(self, action: str, side: str, price: Decimal, quantity: int):
+        self.version += 1
+        change = {
+            'version': self.version,
+            'action': action,
+            'side': side,
+            'price': price,
+            'quantity': quantity
+        }
+        self.changes.append(change)
+        self.logger.log_change(action, side, price, quantity)
+
+    def get_updates_since(self, last_version: int) -> List[Dict]:
+        return [change for change in self.changes if change['version'] > last_version]
+
+    def clear_changes(self):
+        self.changes.clear()
+
     @property
     def best_bid_ask(self) -> Tuple[Optional[Decimal], Optional[Decimal]]:
         best_bid = self.bids.max().price if self.bids.root else None
         best_ask = self.asks.min().price if self.asks.root else None
         return best_bid, best_ask
+
+    @property
+    def current_version(self):
+        return self.version
